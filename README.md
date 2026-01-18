@@ -198,7 +198,7 @@ If this project helped you, consider supporting its development:
 - 🔀 **Submit a pull request** to contribute
 - 📢 **Share** with other Magic Mouse users
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/your_username)
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/suyuhang19i)
 
 ## 💬 Feedback & Support
 
