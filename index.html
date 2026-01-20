@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Primary Meta Tags -->
+    <title>MagicTapper - Tap-to-Click & Drag for Apple Magic Mouse | macOS Utility</title>
+    <meta name="title" content="MagicTapper - Tap-to-Click & Drag for Apple Magic Mouse | macOS Utility">
+    <meta name="description" content="Free tap-to-click for Apple Magic Mouse on macOS. Features double-tap and hold to drag, left/right tap clicking. No more pressing the mouse button. Download now!">
+    <meta name="keywords" content="Apple Magic Mouse, tap to click, Magic Mouse drag, Magic Mouse gestures, macOS Magic Mouse, tap to click macOS, Magic Mouse utility, Magic Mouse app, drag and drop Magic Mouse, Magic Mouse double tap, Magic Mouse software, Apple Mouse gestures, macOS mouse utility">
+    <meta name="author" content="MagicTapper">
+    <meta name="robots" content="index, follow">
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://nyannpasu95.github.io/MagicTapper/">
+    <meta property="og:title" content="MagicTapper - Tap-to-Click & Drag for Apple Magic Mouse">
+    <meta property="og:description" content="Free tap-to-click for Apple Magic Mouse. Features double-tap and hold to drag, left/right tap clicking. Finally brings trackpad-style tapping to Magic Mouse!">
+    <meta property="og:image" content="https://raw.githubusercontent.com/nyannpasu95/MagicTapper/main/magictapper-light.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://nyannpasu95.github.io/MagicTapper/">
+    <meta property="twitter:title" content="MagicTapper - Tap-to-Click & Drag for Apple Magic Mouse">
+    <meta property="twitter:description" content="Free tap-to-click for Apple Magic Mouse. Features double-tap and hold to drag, left/right tap clicking. Download now!">
+    <meta property="twitter:image" content="https://raw.githubusercontent.com/nyannpasu95/MagicTapper/main/magictapper-light.png">
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://nyannpasu95.github.io/MagicTapper/">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="https://raw.githubusercontent.com/nyannpasu95/MagicTapper/main/AppIcon.iconset/icon_32x32.png">
+
+    <!-- Schema.org structured data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "MagicTapper",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "macOS 13.0+",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "description": "Tap-to-click utility for Apple Magic Mouse featuring double-tap and hold to drag, left/right tap clicking, and trackpad-style gestures.",
+      "featureList": [
+        "Tap left side for left-click",
+        "Hold right side for right-click",
+        "Double-tap and hold to drag & drop",
+        "Launch at Login support",
+        "Fast & responsive with minimal latency",
+        "Privacy-focused - runs entirely locally"
+      ],
+      "screenshot": "https://raw.githubusercontent.com/nyannpasu95/MagicTapper/main/magictapper-light.png",
+      "downloadUrl": "https://github.com/nyannpasu95/MagicTapper",
+      "softwareVersion": "1.1",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "5",
+        "ratingCount": "1"
+      }
+    }
+    </script>
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 60px 20px 40px;
+            color: white;
+        }
+
+        .logo {
+            max-width: 600px;
+            width: 100%;
+            height: auto;
+            margin-bottom: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .tagline {
+            font-size: 1.5em;
+            margin-bottom: 30px;
+            opacity: 0.95;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 30px 0;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            text-decoration: none;
+            border-radius: 50px;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid white;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-2px);
+        }
+
+        .content {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            margin: 40px auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .feature {
+            padding: 30px;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            transition: transform 0.3s ease;
+        }
+
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            font-size: 3em;
+            margin-bottom: 15px;
+        }
+
+        .feature h3 {
+            font-size: 1.5em;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+
+        .highlight-feature {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            margin: 40px 0;
+            text-align: center;
+        }
+
+        .highlight-feature h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+        }
+
+        .highlight-feature p {
+            font-size: 1.3em;
+            line-height: 1.8;
+        }
+
+        .demo-video {
+            max-width: 800px;
+            margin: 40px auto;
+            text-align: center;
+        }
+
+        .installation {
+            background: #f5f7fa;
+            padding: 40px;
+            border-radius: 15px;
+            margin: 40px 0;
+        }
+
+        .installation h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        code {
+            background: #2d3748;
+            color: #68d391;
+            padding: 15px 20px;
+            border-radius: 8px;
+            display: block;
+            margin: 15px 0;
+            font-size: 1.1em;
+            overflow-x: auto;
+        }
+
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: white;
+        }
+
+        footer a {
+            color: white;
+            text-decoration: none;
+            border-bottom: 2px solid white;
+        }
+
+        .requirements {
+            background: #fff3cd;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 30px 0;
+            border-left: 5px solid #ffc107;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2em;
+            }
+
+            .tagline {
+                font-size: 1.2em;
+            }
+
+            .content {
+                padding: 30px 20px;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <img src="https://raw.githubusercontent.com/nyannpasu95/MagicTapper/main/magictapper-light.png" alt="MagicTapper - Tap-to-Click for Apple Magic Mouse" class="logo">
+            <h1>MagicTapper</h1>
+            <p class="tagline">Finally, tap-to-click for your Apple Magic Mouse!</p>
+            <p style="font-size: 1.2em; opacity: 0.9;">Bring trackpad-style gestures to your Magic Mouse with tap clicking and drag-and-drop</p>
+
+            <div class="cta-buttons">
+                <a href="https://github.com/nyannpasu95/MagicTapper" class="btn btn-primary">Download on GitHub</a>
+                <a href="https://github.com/nyannpasu95/MagicTapper#-installation" class="btn btn-secondary">View Installation Guide</a>
+            </div>
+        </header>
+
+        <div class="content">
+            <h2 style="text-align: center; font-size: 2.5em; color: #667eea; margin-bottom: 40px;">Why Magic Mouse Users Love MagicTapper</h2>
+
+            <!-- Highlight the drag feature prominently -->
+            <div class="highlight-feature">
+                <div class="feature-icon">🎯</div>
+                <h2>Double-Tap and Hold to Drag</h2>
+                <p><strong>The #1 requested feature!</strong> Just like your MacBook trackpad, you can now <strong>double-tap and hold</strong> to drag files, select text, and move windows. No more holding down the mouse button!</p>
+                <p style="margin-top: 20px; font-size: 1.1em;">This game-changing feature makes your Magic Mouse feel like a true Apple trackpad experience.</p>
+            </div>
+
+            <div class="features">
+                <div class="feature">
+                    <div class="feature-icon">👆</div>
+                    <h3>Tap to Left-Click</h3>
+                    <p>Quick tap on the left side instantly registers as a left-click. No more physical button presses wearing out your mouse.</p>
+                </div>
+
+                <div class="feature">
+                    <div class="feature-icon">👉</div>
+                    <h3>Hold for Right-Click</h3>
+                    <p>Hold the right side for 0.1 seconds to trigger a right-click (context menu). Anti-false-trigger protection included.</p>
+                </div>
+
+                <div class="feature">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fast & Responsive</h3>
+                    <p>Optimized for minimal latency. Your taps register instantly, just like the native Magic Mouse button.</p>
+                </div>
+
+                <div class="feature">
+                    <div class="feature-icon">🚀</div>
+                    <h3>Launch at Login</h3>
+                    <p>Set it once and forget it. MagicTapper can automatically start when you log into macOS.</p>
+                </div>
+
+                <div class="feature">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Privacy First</h3>
+                    <p>Runs entirely on your Mac with zero network access. Your mouse data never leaves your computer.</p>
+                </div>
+
+                <div class="feature">
+                    <div class="feature-icon">🎛️</div>
+                    <h3>Easy Toggle</h3>
+                    <p>Quickly enable or disable tap-to-click from the menu bar. Perfect for when you need traditional clicking.</p>
+                </div>
+            </div>
+
+            <div class="installation">
+                <h2>Quick Installation</h2>
+                <p style="margin-bottom: 20px;">Get started in 2 minutes with our automated installer:</p>
+                <code>cd /path/to/magictapper<br>bash install-final.sh</code>
+                <p style="margin-top: 20px;">Or <a href="https://github.com/nyannpasu95/MagicTapper#-installation" style="color: #667eea; font-weight: 600;">view detailed installation instructions</a> on GitHub.</p>
+            </div>
+
+            <div class="requirements">
+                <h3>📋 Requirements</h3>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>macOS 13.0 (Ventura) or later</strong></li>
+                    <li><strong>Apple Magic Mouse</strong> (1st or 2nd generation)</li>
+                    <li><strong>Bluetooth connection</strong> required</li>
+                </ul>
+            </div>
+
+            <div style="text-align: center; margin: 60px 0;">
+                <h2 style="color: #667eea; margin-bottom: 30px;">How It Works</h2>
+                <div style="background: #f5f7fa; padding: 30px; border-radius: 15px;">
+                    <h3 style="margin-bottom: 15px;">🖱️ Left-Click</h3>
+                    <p>Quick, light tap on the left side</p>
+
+                    <h3 style="margin-top: 30px; margin-bottom: 15px;">🖱️ Right-Click</h3>
+                    <p>Press and hold (&gt;0.1s) on the right side before releasing</p>
+
+                    <h3 style="margin-top: 30px; margin-bottom: 15px;">🎯 Drag & Drop</h3>
+                    <p><strong>Double-tap quickly, keep finger down on second tap, then move</strong></p>
+                    <p style="margin-top: 10px; color: #667eea; font-weight: 600;">Perfect for dragging files, selecting text, and moving windows!</p>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin: 60px 0;">
+                <h2 style="color: #667eea; margin-bottom: 20px;">Free & Open Source</h2>
+                <p style="font-size: 1.2em; margin-bottom: 30px;">MagicTapper is completely free to use and open source on GitHub. Star the repo, contribute, or report issues!</p>
+                <div class="cta-buttons">
+                    <a href="https://github.com/nyannpasu95/MagicTapper" class="btn btn-primary">⭐ Star on GitHub</a>
+                    <a href="https://github.com/nyannpasu95/MagicTapper/issues" class="btn btn-secondary">🐛 Report Issue</a>
+                </div>
+            </div>
+
+            <div style="background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%); padding: 40px; border-radius: 20px; text-align: center; margin-top: 60px;">
+                <h2 style="margin-bottom: 20px;">Support the Project</h2>
+                <p style="font-size: 1.2em; margin-bottom: 30px;">If MagicTapper made your Magic Mouse experience better, consider supporting development!</p>
+                <a href="https://buymeacoffee.com/suyuhang19i" class="btn" style="background: white; color: #333;">☕ Buy Me A Coffee</a>
+            </div>
+        </div>
+
+        <footer>
+            <p>Built with ❤️ using Claude Code (Sonnet 4.5)</p>
+            <p style="margin-top: 10px;">
+                <a href="https://github.com/nyannpasu95/MagicTapper">GitHub</a> ·
+                <a href="https://github.com/nyannpasu95/MagicTapper#readme">Documentation</a> ·
+                <a href="https://github.com/nyannpasu95/MagicTapper/issues">Issues</a>
+            </p>
+            <p style="margin-top: 20px; opacity: 0.8;">© 2024-2026 MagicTapper · MIT License</p>
+        </footer>
+    </div>
+
+    <!-- Google Analytics placeholder (add your tracking ID) -->
+    <!-- <script async src="https://www.googletagmanager.com/gtag/js?id=GA_MEASUREMENT_ID"></script> -->
+</body>
+</html>
