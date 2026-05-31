@@ -21,6 +21,8 @@ class MultitouchManager {
     private var quickTouchTimeThreshold: TimeInterval // 快速触控时间阈值
 
     fileprivate static var sharedInstance: MultitouchManager?
+    private let touchQueue = DispatchQueue(label: "com.magictapper.multitouch")
+    private let touchQueueKey = DispatchSpecificKey<Void>()
 
     var onClickSynthesized: ((CGPoint, Bool) -> Void)?
     var onDragStarted: ((CGPoint) -> Void)?
@@ -40,6 +42,7 @@ class MultitouchManager {
         self.quickTouchTimeThreshold = config.quickTouchTimeThreshold
 
         MultitouchManager.sharedInstance = self
+        touchQueue.setSpecific(key: touchQueueKey, value: ())
 
         // Listen for configuration changes
         NotificationCenter.default.addObserver(
@@ -53,13 +56,15 @@ class MultitouchManager {
     @objc private func configurationDidChange(_ notification: Notification) {
         guard let config = notification.userInfo?["configuration"] as? TapConfiguration else { return }
 
-        // Update TapDetector
-        tapDetector.updateConfiguration(config)
+        performOnTouchQueue {
+            // Update TapDetector
+            tapDetector.updateConfiguration(config)
 
-        // Update MultitouchManager thresholds
-        rightClickThreshold = config.rightClickAreaThreshold
-        surfaceMovementThreshold = config.surfaceMovementThreshold
-        quickTouchTimeThreshold = config.quickTouchTimeThreshold
+            // Update MultitouchManager thresholds
+            rightClickThreshold = config.rightClickAreaThreshold
+            surfaceMovementThreshold = config.surfaceMovementThreshold
+            quickTouchTimeThreshold = config.quickTouchTimeThreshold
+        }
 
         #if DEBUG
         print("🔧 MultitouchManager: Configuration updated")
@@ -68,6 +73,16 @@ class MultitouchManager {
 
     @discardableResult
     func start() -> Int {
+        return performOnTouchQueue {
+            startOnTouchQueue()
+        }
+    }
+
+    private func startOnTouchQueue() -> Int {
+        guard devices.isEmpty else {
+            return devices.count
+        }
+
         guard let deviceList = MTDeviceCreateList() else {
             return 0
         }
@@ -92,25 +107,37 @@ class MultitouchManager {
     }
 
     func stop() {
-        for device in devices {
-            MTUnregisterContactFrameCallback(device, touchCallback)
-            MTDeviceStop(device)
+        performOnTouchQueue {
+            for device in devices {
+                MTUnregisterContactFrameCallback(device, touchCallback)
+                MTDeviceStop(device)
+                MTDeviceRelease(device)
+            }
+            devices.removeAll()
         }
-        devices.removeAll()
     }
 
     func setEnabled(_ enabled: Bool) {
-        isEnabled = enabled
+        performOnTouchQueue {
+            isEnabled = enabled
+        }
     }
 
     /// Returns the current number of registered devices
     func getDeviceCount() -> Int {
-        return devices.count
+        return performOnTouchQueue {
+            devices.count
+        }
     }
 
     /// Check if devices are still valid and responding
     func validateDevices() -> Bool {
-        // If we have no devices, validation fails
+        return performOnTouchQueue {
+            validateDevicesOnTouchQueue()
+        }
+    }
+
+    private func validateDevicesOnTouchQueue() -> Bool {
         guard !devices.isEmpty else { return false }
 
         // Try to get fresh device list and compare
@@ -131,6 +158,12 @@ class MultitouchManager {
     }
 
     func processTouches(_ touches: UnsafeMutablePointer<MTTouch>, numTouches: Int, timestamp: Double) {
+        performOnTouchQueue {
+            processTouchesOnTouchQueue(touches, numTouches: numTouches, timestamp: timestamp)
+        }
+    }
+
+    private func processTouchesOnTouchQueue(_ touches: UnsafeMutablePointer<MTTouch>, numTouches: Int, timestamp: Double) {
         guard isEnabled else { return }
 
         // Only fetch cursor position when needed (touch start, end, or drag)
@@ -268,6 +301,17 @@ class MultitouchManager {
     deinit {
         stop()
         NotificationCenter.default.removeObserver(self)
+        if MultitouchManager.sharedInstance === self {
+            MultitouchManager.sharedInstance = nil
+        }
+    }
+
+    private func performOnTouchQueue<T>(_ work: () -> T) -> T {
+        if DispatchQueue.getSpecific(key: touchQueueKey) != nil {
+            return work()
+        }
+
+        return touchQueue.sync(execute: work)
     }
 }
 

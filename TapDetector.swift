@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 
 /// Mouse gesture state machine
-enum MouseState {
+enum MouseState: Equatable {
     case idle                    // 空闲状态
     case touching                // 接触中（单击）
     case dragging                // 拖拽中
@@ -38,6 +38,7 @@ class TapDetector {
     private var dragStartLocation: CGPoint?
     private var previousLocation: CGPoint?
     private var hasMovedSignificantly: Bool = false  // 是否有明显移动（用于区分点击和滚动）
+    private let nowProvider: () -> Date
 
     /// Initialize with explicit values (for testing)
     init(
@@ -47,7 +48,8 @@ class TapDetector {
         doubleTapTimeWindow: TimeInterval = 0.3,
         dragThreshold: CGFloat = 2.0,
         minTapDuration: TimeInterval = 0.03,
-        quickTapThreshold: TimeInterval = 0.15
+        quickTapThreshold: TimeInterval = 0.15,
+        nowProvider: @escaping () -> Date = Date.init
     ) {
         self.tapTimeThreshold = tapTimeThreshold
         self.tapMovementThreshold = tapMovementThreshold
@@ -56,6 +58,7 @@ class TapDetector {
         self.minTapDuration = minTapDuration
         self.dragThreshold = dragThreshold
         self.quickTapThreshold = quickTapThreshold
+        self.nowProvider = nowProvider
     }
 
     /// Initialize from TapConfiguration
@@ -84,7 +87,7 @@ class TapDetector {
 
     /// Process touch began event
     func touchBegan(at location: CGPoint, isRightSide: Bool) -> TouchProcessResult {
-        let now = Date()
+        let now = nowProvider()
 
         // 检查是否在双击时间窗口内
         if let lastTime = lastClickTime,
@@ -202,7 +205,7 @@ class TapDetector {
             )
         }
 
-        let now = Date()
+        let now = nowProvider()
         let duration = now.timeIntervalSince(startTime)
         let distance = hypot(location.x - startLocation.x, location.y - startLocation.y)
 

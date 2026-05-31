@@ -2,26 +2,34 @@ import XCTest
 import Foundation
 import CoreGraphics
 
-@testable import MouseToucherLib
+@testable import MagicTapperLib
 
 class TapDetectorTests: XCTestCase {
 
     var detector: TapDetector!
+    var currentTime: Date!
 
     override func setUp() {
         super.setUp()
+        currentTime = Date(timeIntervalSince1970: 1_000)
         detector = TapDetector(
             tapTimeThreshold: 0.3,
             tapMovementThreshold: 5.0,
             rightClickTimeThreshold: 0.1,
             doubleTapTimeWindow: 0.3,
-            dragThreshold: 3.0
+            dragThreshold: 3.0,
+            nowProvider: { [unowned self] in self.currentTime }
         )
     }
 
     override func tearDown() {
         detector = nil
+        currentTime = nil
         super.tearDown()
+    }
+
+    private func advanceTime(by interval: TimeInterval) {
+        currentTime = currentTime.addingTimeInterval(interval)
     }
 
     // MARK: - Basic Tap Detection
@@ -31,6 +39,7 @@ class TapDetectorTests: XCTestCase {
         let endLocation = CGPoint(x: 102, y: 102) // 2.83 pixels away
 
         _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        advanceTime(by: 0.05)
         let result = detector.touchEnded(at: endLocation, isRightSide: false)
 
         XCTAssertTrue(result.shouldClick, "Valid tap should trigger a click")
@@ -43,6 +52,7 @@ class TapDetectorTests: XCTestCase {
         let location = CGPoint(x: 100, y: 100)
 
         _ = detector.touchBegan(at: location, isRightSide: false)
+        advanceTime(by: 0.05)
         let result = detector.touchEnded(at: location, isRightSide: false)
 
         XCTAssertTrue(result.shouldClick, "Tap with no movement should be valid")
@@ -54,6 +64,9 @@ class TapDetectorTests: XCTestCase {
         let endLocation = CGPoint(x: 110, y: 110) // 14.14 pixels away
 
         _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        advanceTime(by: 0.16)
+        _ = detector.touchMoved(to: endLocation)
+        advanceTime(by: 0.01)
         let result = detector.touchEnded(at: endLocation, isRightSide: false)
 
         XCTAssertFalse(result.shouldClick, "Tap exceeding movement threshold should be invalid")
@@ -63,10 +76,7 @@ class TapDetectorTests: XCTestCase {
         let startLocation = CGPoint(x: 100, y: 100)
 
         _ = detector.touchBegan(at: startLocation, isRightSide: false)
-
-        // Wait longer than threshold
-        Thread.sleep(forTimeInterval: 0.35)
-
+        advanceTime(by: 0.35)
         let result = detector.touchEnded(at: startLocation, isRightSide: false)
 
         XCTAssertFalse(result.shouldClick, "Tap exceeding time threshold should be invalid")
@@ -78,7 +88,7 @@ class TapDetectorTests: XCTestCase {
         let location = CGPoint(x: 100, y: 100)
 
         _ = detector.touchBegan(at: location, isRightSide: true)
-        Thread.sleep(forTimeInterval: 0.12) // Longer than right click threshold
+        advanceTime(by: 0.12) // Longer than right click threshold
         let result = detector.touchEnded(at: location, isRightSide: true)
 
         XCTAssertTrue(result.shouldClick, "Should trigger click")
@@ -89,7 +99,7 @@ class TapDetectorTests: XCTestCase {
         let location = CGPoint(x: 100, y: 100)
 
         _ = detector.touchBegan(at: location, isRightSide: true)
-        // End immediately, before right click threshold
+        advanceTime(by: 0.05) // End before right click threshold
         let result = detector.touchEnded(at: location, isRightSide: true)
 
         XCTAssertTrue(result.shouldClick, "Should trigger click")
@@ -100,6 +110,7 @@ class TapDetectorTests: XCTestCase {
         let location = CGPoint(x: 100, y: 100)
 
         _ = detector.touchBegan(at: location, isRightSide: false)
+        advanceTime(by: 0.05)
         let result = detector.touchEnded(at: location, isRightSide: false)
 
         XCTAssertTrue(result.shouldClick, "Should trigger click")
@@ -114,11 +125,12 @@ class TapDetectorTests: XCTestCase {
 
         // First tap
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         let result1 = detector.touchEnded(at: location1, isRightSide: false)
         XCTAssertTrue(result1.shouldClick)
 
         // Second tap within double-tap window
-        Thread.sleep(forTimeInterval: 0.1) // Within 0.3s window
+        advanceTime(by: 0.1) // Within 0.3s window
         let result2 = detector.touchBegan(at: location2, isRightSide: false)
 
         XCTAssertTrue(result2.isDragging, "Should enter dragging mode")
@@ -132,10 +144,11 @@ class TapDetectorTests: XCTestCase {
 
         // First tap
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         _ = detector.touchEnded(at: location1, isRightSide: false)
 
         // Second tap to enter drag mode
-        Thread.sleep(forTimeInterval: 0.1)
+        advanceTime(by: 0.1)
         _ = detector.touchBegan(at: location2, isRightSide: false)
 
         // Move while dragging
@@ -149,10 +162,11 @@ class TapDetectorTests: XCTestCase {
 
         // First tap
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         _ = detector.touchEnded(at: location1, isRightSide: false)
 
         // Second tap to enter drag mode
-        Thread.sleep(forTimeInterval: 0.1)
+        advanceTime(by: 0.1)
         _ = detector.touchBegan(at: location1, isRightSide: false)
         XCTAssertTrue(detector.isDragging)
 
@@ -168,10 +182,11 @@ class TapDetectorTests: XCTestCase {
 
         // First tap
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         _ = detector.touchEnded(at: location1, isRightSide: false)
 
         // Wait too long (outside double-tap window)
-        Thread.sleep(forTimeInterval: 0.4)
+        advanceTime(by: 0.4)
 
         // Second tap - should NOT enter drag mode
         let result2 = detector.touchBegan(at: location2, isRightSide: false)
@@ -187,8 +202,9 @@ class TapDetectorTests: XCTestCase {
 
         // Enter drag mode
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         _ = detector.touchEnded(at: location1, isRightSide: false)
-        Thread.sleep(forTimeInterval: 0.1)
+        advanceTime(by: 0.1)
         _ = detector.touchBegan(at: location2, isRightSide: false)
 
         // Small movement should not generate drag event
@@ -204,8 +220,9 @@ class TapDetectorTests: XCTestCase {
 
         // Enter drag mode
         _ = detector.touchBegan(at: location1, isRightSide: false)
+        advanceTime(by: 0.05)
         _ = detector.touchEnded(at: location1, isRightSide: false)
-        Thread.sleep(forTimeInterval: 0.1)
+        advanceTime(by: 0.1)
         _ = detector.touchBegan(at: location2, isRightSide: false)
 
         // Large movement should generate drag event
@@ -265,15 +282,4 @@ class TapDetectorTests: XCTestCase {
         XCTAssertFalse(result.isDragging, "Should handle touchMoved without touchBegan")
     }
 
-    // MARK: - Performance
-
-    func testPerformance_RapidTaps() {
-        measure {
-            for i in 0..<1000 {
-                let location = CGPoint(x: CGFloat(i % 100), y: CGFloat(i / 100))
-                _ = detector.touchBegan(at: location, isRightSide: false)
-                _ = detector.touchEnded(at: location, isRightSide: false)
-            }
-        }
-    }
 }

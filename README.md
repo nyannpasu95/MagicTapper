@@ -91,6 +91,7 @@ Click the mouse icon in your menu bar to access:
 - **Status** - Shows if running or disabled
 - **Tap to Click** - Enable/disable the feature (checkmark shows when enabled)
 - **Launch at Login** - Auto-start with macOS (checkmark when enabled)
+- **Pointer Speed** - Adjust global macOS mouse pointer speed with a live slider
 - **Accessibility Instructions** - Help with permissions
 - **About** - Version info and features
 - **Quit** - Exit the app
@@ -102,6 +103,7 @@ Click the mouse icon in your menu bar to access:
 - 💡 **Drag & drop**: Double-tap quickly, keep finger down on second tap, then move
 - 💡 The dividing line between left/right is roughly at 60% from left
 - 💡 To disable temporarily, toggle "Tap to Click" off in menu bar
+- 💡 Pointer Speed changes the system-wide mouse speed, so it affects other mice too
 
 ## 🔧 Auto-Start on Login (Optional)
 

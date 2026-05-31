@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Debug build script for MagicTapper app
 
@@ -6,6 +7,19 @@ APP_NAME="MagicTapper_Debug"
 BUNDLE_ID="com.magictapper.app.debug"
 BUILD_DIR="build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
+MODULE_CACHE="$BUILD_DIR/clang-module-cache"
+XCRUN="/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun"
+SWIFTC="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+
+if [ ! -x "$SWIFTC" ]; then
+    SWIFTC="swiftc"
+fi
+
+if [ -x "$XCRUN" ]; then
+    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+else
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+fi
 
 echo "=========================================="
 echo "Building MagicTapper (Debug Mode)"
@@ -17,10 +31,13 @@ rm -rf "$APP_PATH"
 # Create app bundle structure
 mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
+mkdir -p "$MODULE_CACHE"
 
 # Compile with debug symbols for current architecture only
 echo "📦 Compiling debug version..."
-swiftc -o "$APP_PATH/Contents/MacOS/$APP_NAME" \
+"$SWIFTC" -o "$APP_PATH/Contents/MacOS/$APP_NAME" \
+    -sdk "$SDKROOT" \
+    -Xcc "-fmodules-cache-path=$MODULE_CACHE" \
     -g \
     -Onone \
     -D DEBUG \
@@ -36,6 +53,9 @@ swiftc -o "$APP_PATH/Contents/MacOS/$APP_NAME" \
     Constants.swift \
     TapConfiguration.swift \
     TapDetector.swift \
+    MouseSpeedManager.swift \
+    MouseSpeedIOKitBackend.swift \
+    PointerSpeedMenuView.swift \
     MultitouchManager.swift \
     MultitouchRestartManager.swift \
     AppDelegate.swift \
@@ -46,43 +66,13 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# Create debug Info.plist
-cat > "$APP_PATH/Contents/Info.plist" << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>CFBundleDevelopmentRegion</key>
-    <string>en</string>
-    <key>CFBundleExecutable</key>
-    <string>$APP_NAME</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleIdentifier</key>
-    <string>$BUNDLE_ID</string>
-    <key>CFBundleInfoDictionaryVersion</key>
-    <string>6.0</string>
-    <key>CFBundleName</key>
-    <string>MagicTapper Debug</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.1-debug</string>
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSSupportsAutomaticGraphicsSwitching</key>
-    <true/>
-    <key>NSAccessibilityUsageDescription</key>
-    <string>MagicTapper requires accessibility permissions to detect taps on your Magic Mouse and simulate clicks.</string>
-</dict>
-</plist>
-EOF
+# Create debug Info.plist from the shared app plist to avoid duplicate metadata.
+cp Info.plist "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName MagicTapper Debug" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1-debug" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$APP_PATH/Contents/Info.plist"
 
 # Copy app icon
 cp AppIcon.icns "$APP_PATH/Contents/Resources/"

@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Build script for MagicTapper app (Production)
 
@@ -6,6 +7,19 @@ APP_NAME="MagicTapper"
 BUNDLE_ID="com.magictapper.app"
 BUILD_DIR="build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
+MODULE_CACHE="$BUILD_DIR/clang-module-cache"
+XCRUN="/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun"
+SWIFTC="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+
+if [ ! -x "$SWIFTC" ]; then
+    SWIFTC="swiftc"
+fi
+
+if [ -x "$XCRUN" ]; then
+    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+else
+    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+fi
 
 echo "=========================================="
 echo "Building MagicTapper (Universal Binary)"
@@ -14,15 +28,22 @@ echo "=========================================="
 # Clean previous build
 rm -rf "$APP_PATH"
 mkdir -p "$BUILD_DIR"
+mkdir -p "$MODULE_CACHE"
 
 # Create app bundle structure
 mkdir -p "$APP_PATH/Contents/MacOS"
 mkdir -p "$APP_PATH/Contents/Resources"
 
-# Compile for Apple Silicon (arm64)
-echo "📦 Compiling for Apple Silicon (arm64)..."
-swiftc -o "$BUILD_DIR/${APP_NAME}_arm64" \
-    -target arm64-apple-macos13.0 \
+compile_arch() {
+    local arch="$1"
+    local label="$2"
+    local output="$BUILD_DIR/${APP_NAME}_${arch}"
+
+    echo "📦 Compiling for $label ($arch)..."
+    "$SWIFTC" -O -o "$output" \
+    -sdk "$SDKROOT" \
+    -Xcc "-fmodules-cache-path=$MODULE_CACHE" \
+    -target "${arch}-apple-macos13.0" \
     -import-objc-header MultitouchBridge.h \
     -framework Cocoa \
     -framework ApplicationServices \
@@ -34,40 +55,17 @@ swiftc -o "$BUILD_DIR/${APP_NAME}_arm64" \
     Constants.swift \
     TapConfiguration.swift \
     TapDetector.swift \
+    MouseSpeedManager.swift \
+    MouseSpeedIOKitBackend.swift \
+    PointerSpeedMenuView.swift \
     MultitouchManager.swift \
     MultitouchRestartManager.swift \
     AppDelegate.swift \
     main.swift
+}
 
-if [ $? -ne 0 ]; then
-    echo "❌ arm64 compilation failed!"
-    exit 1
-fi
-
-# Compile for Intel (x86_64)
-echo "📦 Compiling for Intel (x86_64)..."
-swiftc -o "$BUILD_DIR/${APP_NAME}_x86_64" \
-    -target x86_64-apple-macos13.0 \
-    -import-objc-header MultitouchBridge.h \
-    -framework Cocoa \
-    -framework ApplicationServices \
-    -framework ServiceManagement \
-    -framework IOKit \
-    -F /System/Library/PrivateFrameworks \
-    -framework MultitouchSupport \
-    -Xlinker -rpath -Xlinker /System/Library/PrivateFrameworks \
-    Constants.swift \
-    TapConfiguration.swift \
-    TapDetector.swift \
-    MultitouchManager.swift \
-    MultitouchRestartManager.swift \
-    AppDelegate.swift \
-    main.swift
-
-if [ $? -ne 0 ]; then
-    echo "❌ x86_64 compilation failed!"
-    exit 1
-fi
+compile_arch "arm64" "Apple Silicon"
+compile_arch "x86_64" "Intel"
 
 # Create universal binary
 echo "🔗 Creating universal binary..."
@@ -112,6 +110,7 @@ echo "New Features in v1.1:"
 echo "  • Advanced gesture recognition with state machine"
 echo "  • Right-click detection (hold >0.1s)"
 echo "  • Double-tap drag and drop support"
+echo "  • Pointer speed slider"
 echo "  • Launch at Login functionality"
 echo "  • Enhanced menu bar with status display"
 echo ""

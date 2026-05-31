@@ -5,6 +5,7 @@ import ServiceManagement
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var multitouchManager: MultitouchManager?
+    private let mouseSpeedManager = MouseSpeedManager(backend: MouseSpeedIOKitBackend())
     var isEnabled = true
     private var hasStartedMultitouch = false
     private var hasRequestedAccessibilityPrompt = false
@@ -24,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRecoveringFromSleep = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        prepareMouseSpeed()
         setupMenuBar()
         registerForSleepWakeNotifications()
         ensureAccessibilityAndStart()
@@ -226,6 +228,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Pointer speed slider
+        let pointerSpeedItem = NSMenuItem()
+        pointerSpeedItem.view = makePointerSpeedMenuView()
+        menu.addItem(pointerSpeedItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         // Accessibility instructions
         let accessibilityItem = NSMenuItem(title: "Accessibility Instructions…", action: #selector(showAccessibilityInstructions), keyEquivalent: "")
         accessibilityItem.target = self
@@ -246,6 +255,55 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
 
         statusItem?.menu = menu
+    }
+
+    private func prepareMouseSpeed() {
+        do {
+            _ = try mouseSpeedManager.prepare()
+        } catch {
+            #if DEBUG
+            print("⚠️ Pointer speed setup failed: \(error.localizedDescription)")
+            #endif
+        }
+    }
+
+    private func makePointerSpeedMenuView() -> PointerSpeedMenuView {
+        let speedView = PointerSpeedMenuView(currentSpeed: mouseSpeedManager.currentSpeed)
+
+        speedView.onSpeedChanged = { [weak self, weak speedView] speed in
+            guard let self = self else { return false }
+
+            do {
+                let appliedSpeed = try self.mouseSpeedManager.setSpeed(speed)
+                speedView?.setSpeed(appliedSpeed)
+                return true
+            } catch {
+                self.showMouseSpeedError(error)
+                return false
+            }
+        }
+
+        speedView.onRestoreDefault = { [weak self] in
+            guard let self = self else { return nil }
+
+            do {
+                return try self.mouseSpeedManager.restoreSystemDefault()
+            } catch {
+                self.showMouseSpeedError(error)
+                return nil
+            }
+        }
+
+        return speedView
+    }
+
+    private func showMouseSpeedError(_ error: Error) {
+        let alert = NSAlert()
+        alert.messageText = "Pointer Speed Error"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     @objc func toggleEnabled() {
@@ -288,6 +346,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         • Tap left side for left click
         • Hold tap on right side (>0.1s) for right click
         • Double-tap and hold to drag and drop
+        • Adjust global pointer speed beyond the system slider
         • Launch at login support
 
         Version \(Constants.App.version)
@@ -345,22 +404,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func setupMultitouchCallbacks() {
         // Handle clicks
         multitouchManager?.onClickSynthesized = { [weak self] location, isRightClick in
-            self?.synthesizeClick(at: location, isRightClick: isRightClick)
+            DispatchQueue.main.async {
+                self?.synthesizeClick(at: location, isRightClick: isRightClick)
+            }
         }
 
         // Handle drag start
         multitouchManager?.onDragStarted = { [weak self] location in
-            self?.startDrag(at: location)
+            DispatchQueue.main.async {
+                self?.startDrag(at: location)
+            }
         }
 
         // Handle drag movement
         multitouchManager?.onDragMoved = { [weak self] location in
-            self?.moveDrag(to: location)
+            DispatchQueue.main.async {
+                self?.moveDrag(to: location)
+            }
         }
 
         // Handle drag end
         multitouchManager?.onDragEnded = { [weak self] location in
-            self?.endDrag(at: location)
+            DispatchQueue.main.async {
+                self?.endDrag(at: location)
+            }
         }
     }
 

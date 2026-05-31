@@ -2,6 +2,9 @@
 .build/
 *.swiftpm
 
+# App bundles and script build outputs
+build/
+
 # macOS
 .DS_Store
 ._*
