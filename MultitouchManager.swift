@@ -130,6 +130,16 @@ class MultitouchManager {
             let isBuiltIn = MTDeviceIsBuiltIn(device)
 
             if !isBuiltIn {
+                // CFArrayGetValueAtIndex returns a *borrowed* reference whose
+                // only owner is `deviceArray`, which is released the moment this
+                // function returns. We hold these devices for the lifetime of the
+                // manager, so we must take our own +1 retain — otherwise the
+                // framework can free the device (e.g. when the Magic Mouse
+                // disconnects on sleep) while we still point at it, and the next
+                // MTDeviceStop/MTDeviceRelease crashes (use-after-free / over-release).
+                // Balanced by MTDeviceRelease in stop(). MTDeviceRef is a CFType
+                // (its release path is CFRelease), so CFRetain is the correct +1.
+                _ = Unmanaged<AnyObject>.fromOpaque(device).retain()
                 devices.append(device)
                 MTRegisterContactFrameCallback(device, touchCallback)
                 MTDeviceStart(device, 0)
