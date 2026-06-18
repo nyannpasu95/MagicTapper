@@ -27,7 +27,6 @@ let package = Package(
                 "MagicTapper.png",
                 "MultitouchBridge.h",
                 "MultitouchManager.swift",
-                "MultitouchRestartManager.swift",
                 "MouseSpeedIOKitBackend.swift",
                 "OPTIMIZATION.md",
                 "PointerSpeedMenuView.swift",
@@ -53,6 +52,7 @@ let package = Package(
             sources: [
                 "Constants.swift",
                 "MouseSpeedManager.swift",
+                "MultitouchRestartManager.swift",
                 "TapConfiguration.swift",
                 "TapDetector.swift"
             ]

@@ -232,7 +232,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func setupRestartManager() {
-        restartManager = MultitouchRestartManager(appDelegate: self)
+        restartManager = MultitouchRestartManager(controller: self)
 
         restartManager?.onRestartCompleted = { [weak self] success, deviceCount in
             guard let self = self else { return }
@@ -620,5 +620,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let mouseUp = CGEvent(mouseEventSource: dragEventSource, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left) {
             mouseUp.post(tap: .cghidEventTap)
         }
+    }
+}
+
+// MARK: - MultitouchController
+
+extension AppDelegate: MultitouchController {
+    var isAppEnabled: Bool { isEnabled }
+
+    var currentDeviceCount: Int {
+        multitouchManager?.getDeviceCount() ?? 0
+    }
+
+    /// Single controlled entry point used by `MultitouchRestartManager` to
+    /// rebuild the multitouch stack. Keeps the restart manager from reaching
+    /// into AppDelegate internals.
+    @discardableResult
+    func stopAndRecreateMultitouch() -> Int {
+        multitouchManager?.stop()
+        multitouchManager = MultitouchManager()
+        setupMultitouchCallbacks()
+        return multitouchManager?.start() ?? 0
     }
 }

@@ -1,9 +1,25 @@
 import Foundation
-import IOKit
-import IOKit.pwr_mgt
 
-/// Manages multitouch device restart with retry logic and health monitoring
-class MultitouchRestartManager {
+/// Abstraction over the AppDelegate-owned multitouch lifecycle.
+///
+/// `MultitouchRestartManager` talks to this protocol instead of reaching into
+/// `AppDelegate` internals, so the retry/backoff logic can be unit-tested with
+/// a fake controller and no AppKit/Cocoa dependency.
+protocol MultitouchController: AnyObject {
+    /// Whether the app's tap-to-click feature is currently enabled.
+    var isAppEnabled: Bool { get }
+
+    /// Current number of active multitouch devices.
+    var currentDeviceCount: Int { get }
+
+    /// Tear down the existing multitouch manager and create + start a fresh one.
+    /// Returns the number of devices the new manager found.
+    @discardableResult
+    func stopAndRecreateMultitouch() -> Int
+}
+
+/// Manages multitouch device restart with retry logic and health monitoring.
+final class MultitouchRestartManager {
 
     // MARK: - Types
 
@@ -34,22 +50,35 @@ class MultitouchRestartManager {
         case manual = "manual"
     }
 
+    /// Schedules a closure to run after a delay. Injectable for tests so the
+    /// retry loop can be driven synchronously.
+    typealias Scheduler = (TimeInterval, @escaping () -> Void) -> Void
+
+    static let defaultScheduler: Scheduler = { delay, work in
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        } else {
+            work()
+        }
+    }
+
     // MARK: - Properties
 
-    private weak var appDelegate: AppDelegate?
-    private var retryConfig: RetryConfig
+    private weak var controller: MultitouchController?
+    private let retryConfig: RetryConfig
+    private let schedule: Scheduler
     private var currentAttempt = 0
     private var isRestarting = false
     private var pendingRestartWorkItem: DispatchWorkItem?
 
     // Health check timer with adaptive interval
     private var healthCheckTimer: Timer?
-    private var currentHealthCheckInterval: TimeInterval = Constants.HealthCheck.defaultInterval
-    private var consecutiveSuccessfulChecks = 0
+    private(set) var currentHealthCheckInterval: TimeInterval = Constants.HealthCheck.defaultInterval
+    private(set) var consecutiveSuccessfulChecks = 0
 
     // Track last successful device detection
-    private var lastSuccessfulStart: Date?
-    private var consecutiveFailures = 0
+    private(set) var lastSuccessfulStart: Date?
+    private(set) var consecutiveFailures = 0
 
     // MARK: - Callbacks
 
@@ -58,9 +87,12 @@ class MultitouchRestartManager {
 
     // MARK: - Initialization
 
-    init(appDelegate: AppDelegate, config: RetryConfig = .default) {
-        self.appDelegate = appDelegate
+    init(controller: MultitouchController,
+         config: RetryConfig = .default,
+         schedule: @escaping Scheduler = MultitouchRestartManager.defaultScheduler) {
+        self.controller = controller
         self.retryConfig = config
+        self.schedule = schedule
     }
 
     deinit {
@@ -84,11 +116,9 @@ class MultitouchRestartManager {
         #endif
 
         if initialDelay > 0 {
-            let workItem = DispatchWorkItem { [weak self] in
+            schedule(initialDelay) { [weak self] in
                 self?.performRestart(reason: reason)
             }
-            pendingRestartWorkItem = workItem
-            DispatchQueue.main.asyncAfter(deadline: .now() + initialDelay, execute: workItem)
         } else {
             performRestart(reason: reason)
         }
@@ -139,7 +169,7 @@ class MultitouchRestartManager {
         }
     }
 
-    private func increaseHealthCheckIntervalIfStable() {
+    func increaseHealthCheckIntervalIfStable() {
         consecutiveSuccessfulChecks += 1
 
         if consecutiveSuccessfulChecks >= Constants.HealthCheck.successThresholdForIncrease {
@@ -172,7 +202,7 @@ class MultitouchRestartManager {
     // MARK: - Private Methods
 
     private func performRestart(reason: RestartReason) {
-        guard let appDelegate = appDelegate else {
+        guard let controller = controller else {
             isRestarting = false
             return
         }
@@ -183,15 +213,8 @@ class MultitouchRestartManager {
         print("🔄 Restart attempt \(currentAttempt)/\(retryConfig.maxAttempts) (reason: \(reason.rawValue))")
         #endif
 
-        // Stop existing manager
-        appDelegate.multitouchManager?.stop()
-
-        // Create new manager and setup callbacks
-        appDelegate.multitouchManager = MultitouchManager()
-        appDelegate.setupMultitouchCallbacks()
-
-        // Try to start
-        let deviceCount = appDelegate.multitouchManager?.start() ?? 0
+        // Tear down + recreate via the single controlled entry point
+        let deviceCount = controller.stopAndRecreateMultitouch()
 
         if deviceCount > 0 {
             // Success
@@ -218,7 +241,7 @@ class MultitouchRestartManager {
                     self.performRestart(reason: reason)
                 }
                 pendingRestartWorkItem = workItem
-                DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+                schedule(delay, workItem.perform)
             } else {
                 // All attempts exhausted
                 isRestarting = false
@@ -232,24 +255,14 @@ class MultitouchRestartManager {
     }
 
     private func performHealthCheck() {
-        guard let appDelegate = appDelegate,
-              appDelegate.isEnabled else {
+        guard let controller = controller,
+              controller.isAppEnabled else {
             // Still schedule next check even if disabled
             scheduleNextHealthCheck()
             return
         }
 
-        // Check if multitouch manager exists and has devices
-        guard let manager = appDelegate.multitouchManager else {
-            #if DEBUG
-            print("💓 Health check: No manager, triggering restart")
-            #endif
-            resetHealthCheckInterval()
-            restart(reason: .healthCheck)
-            return
-        }
-
-        let deviceCount = manager.getDeviceCount()
+        let deviceCount = controller.currentDeviceCount
 
         if deviceCount == 0 {
             #if DEBUG

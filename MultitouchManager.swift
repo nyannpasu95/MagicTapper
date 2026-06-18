@@ -20,9 +20,37 @@ class MultitouchManager {
     private var surfaceMovementThreshold: Float // 表面移动阈值（用于检测滚动意图）
     private var quickTouchTimeThreshold: TimeInterval // 快速触控时间阈值
 
-    fileprivate static var sharedInstance: MultitouchManager?
+    // Singleton access guarded by a lock: the C touch callback fires on an
+    // arbitrary framework thread while init/deinit run on the main thread.
+    private static let sharedInstanceLock = NSLock()
+    private static var _sharedInstance: MultitouchManager?
+    fileprivate static var sharedInstance: MultitouchManager? {
+        sharedInstanceLock.lock()
+        defer { sharedInstanceLock.unlock() }
+        return _sharedInstance
+    }
+    fileprivate static func setSharedInstance(_ manager: MultitouchManager?) {
+        sharedInstanceLock.lock()
+        defer { sharedInstanceLock.unlock() }
+        _sharedInstance = manager
+    }
+    fileprivate static func clearSharedInstanceIfMatching(_ candidate: MultitouchManager) {
+        sharedInstanceLock.lock()
+        defer { sharedInstanceLock.unlock() }
+        if _sharedInstance === candidate {
+            _sharedInstance = nil
+        }
+    }
+
     private let touchQueue = DispatchQueue(label: "com.magictapper.multitouch")
     private let touchQueueKey = DispatchSpecificKey<Void>()
+
+    // Guards the critical section where the framework callback copies touch data
+    // out of the (transient) C pointer. stop() takes the same lock while
+    // unregistering/releasing devices, so an in-flight callback can never read
+    // a dangling pointer.
+    fileprivate let callbackLock = NSLock()
+    fileprivate var isStopped = false
 
     var onClickSynthesized: ((CGPoint, Bool) -> Void)?
     var onDragStarted: ((CGPoint) -> Void)?
@@ -41,7 +69,7 @@ class MultitouchManager {
         self.surfaceMovementThreshold = config.surfaceMovementThreshold
         self.quickTouchTimeThreshold = config.quickTouchTimeThreshold
 
-        MultitouchManager.sharedInstance = self
+        MultitouchManager.setSharedInstance(self)
         touchQueue.setSpecific(key: touchQueueKey, value: ())
 
         // Listen for configuration changes
@@ -79,6 +107,9 @@ class MultitouchManager {
     }
 
     private func startOnTouchQueue() -> Int {
+        callbackLock.lock()
+        defer { callbackLock.unlock() }
+
         guard devices.isEmpty else {
             return devices.count
         }
@@ -89,6 +120,8 @@ class MultitouchManager {
 
         let deviceArray = deviceList.takeRetainedValue() as NSArray
         let count = CFArrayGetCount(deviceArray)
+
+        isStopped = false
 
         for i in 0..<count {
             let device = unsafeBitCast(CFArrayGetValueAtIndex(deviceArray, i), to: MTDeviceRef.self)
@@ -108,12 +141,28 @@ class MultitouchManager {
 
     func stop() {
         performOnTouchQueue {
+            callbackLock.lock()
+            defer { callbackLock.unlock() }
+
+            // Mark stopped first so any in-flight callback bails out before
+            // touching the (soon-to-be-released) device pointer.
+            isStopped = true
+
             for device in devices {
                 MTUnregisterContactFrameCallback(device, touchCallback)
                 MTDeviceStop(device)
                 MTDeviceRelease(device)
             }
             devices.removeAll()
+
+            // Reset transient gesture state so a stale touch can't carry over
+            // into the next start cycle after a restart.
+            activeTouch = -1
+            touchStartX = 0.0
+            touchStartY = 0.0
+            touchStartTime = 0
+            isCancelled = false
+            isDraggingActive = false
         }
     }
 
@@ -157,13 +206,17 @@ class MultitouchManager {
         return externalDeviceCount > 0 && devices.count > 0
     }
 
-    func processTouches(_ touches: UnsafeMutablePointer<MTTouch>, numTouches: Int, timestamp: Double) {
-        performOnTouchQueue {
-            processTouchesOnTouchQueue(touches, numTouches: numTouches, timestamp: timestamp)
+    /// Called from the MultitouchSupport callback thread.
+    /// The touches pointer is only valid for the duration of the callback, so
+    /// the caller must have already copied it into `touches`. We dispatch
+    /// async to `touchQueue` so the framework thread is never blocked.
+    func enqueueTouches(_ touches: [MTTouch], timestamp: Double) {
+        touchQueue.async { [weak self] in
+            self?.processTouchesOnTouchQueue(touches, numTouches: touches.count, timestamp: timestamp)
         }
     }
 
-    private func processTouchesOnTouchQueue(_ touches: UnsafeMutablePointer<MTTouch>, numTouches: Int, timestamp: Double) {
+    private func processTouchesOnTouchQueue(_ touches: [MTTouch], numTouches: Int, timestamp: Double) {
         guard isEnabled else { return }
 
         // Only fetch cursor position when needed (touch start, end, or drag)
@@ -301,9 +354,7 @@ class MultitouchManager {
     deinit {
         stop()
         NotificationCenter.default.removeObserver(self)
-        if MultitouchManager.sharedInstance === self {
-            MultitouchManager.sharedInstance = nil
-        }
+        MultitouchManager.clearSharedInstanceIfMatching(self)
     }
 
     private func performOnTouchQueue<T>(_ work: () -> T) -> T {
@@ -316,8 +367,24 @@ class MultitouchManager {
 }
 
 private func touchCallback(device: Int32, touches: UnsafeMutablePointer<MTTouch>?, numTouches: Int32, timestamp: Double, frame: Int32) -> Int32 {
-    if let manager = MultitouchManager.sharedInstance, let touches = touches {
-        manager.processTouches(touches, numTouches: Int(numTouches), timestamp: timestamp)
+    guard let manager = MultitouchManager.sharedInstance, let touches = touches else {
+        return 0
     }
+
+    // Copy the touch data out of the transient C pointer under the manager's
+    // callback lock. stop() takes the same lock while releasing devices, so
+    // either we copy before stop() releases (safe) or we observe isStopped and
+    // bail out without dereferencing the pointer (safe).
+    let count = Int(numTouches)
+    let buffer: [MTTouch]
+    manager.callbackLock.lock()
+    if manager.isStopped {
+        manager.callbackLock.unlock()
+        return 0
+    }
+    buffer = count > 0 ? Array(UnsafeBufferPointer(start: touches, count: count)) : []
+    manager.callbackLock.unlock()
+
+    manager.enqueueTouches(buffer, timestamp: timestamp)
     return 0
 }
