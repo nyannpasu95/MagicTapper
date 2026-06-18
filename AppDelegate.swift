@@ -1,6 +1,7 @@
 import Cocoa
 import ApplicationServices
 import ServiceManagement
+import IOKit.pwr_mgt
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
@@ -24,10 +25,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSleepTime: Date?
     private var isRecoveringFromSleep = false
 
+    // Prevent system sleep (keep running with lid closed)
+    private var sleepAssertionID: IOPMAssertionID = 0
+    private var preventSleepEnabled = true
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         prepareMouseSpeed()
         setupMenuBar()
         registerForSleepWakeNotifications()
+        loadPreventSleepPreference()
+        if preventSleepEnabled {
+            enableSleepPrevention()
+        }
         ensureAccessibilityAndStart()
     }
 
@@ -54,6 +63,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
         multitouchManager?.stop()
+        disableSleepPrevention()
         unregisterForSleepWakeNotifications()
     }
 
@@ -163,6 +173,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Sleep Prevention
+
+    private func loadPreventSleepPreference() {
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: Constants.SleepPrevention.userDefaultsKey) == nil {
+            preventSleepEnabled = true
+        } else {
+            preventSleepEnabled = defaults.bool(forKey: Constants.SleepPrevention.userDefaultsKey)
+        }
+    }
+
+    private func enableSleepPrevention() {
+        guard sleepAssertionID == 0 else { return }
+
+        var assertionID: IOPMAssertionID = 0
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypePreventSystemSleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            Constants.SleepPrevention.assertionReason as CFString,
+            &assertionID
+        )
+
+        if result == kIOReturnSuccess {
+            sleepAssertionID = assertionID
+            #if DEBUG
+            print("☕ Sleep prevention enabled (PreventSystemSleep assertion active)")
+            #endif
+        } else {
+            #if DEBUG
+            print("⚠️ Failed to enable sleep prevention: 0x\(String(result, radix: 16))")
+            #endif
+        }
+    }
+
+    private func disableSleepPrevention() {
+        guard sleepAssertionID != 0 else { return }
+
+        let result = IOPMAssertionRelease(sleepAssertionID)
+        if result != kIOReturnSuccess {
+            #if DEBUG
+            print("⚠️ Failed to release sleep assertion: 0x\(String(result, radix: 16))")
+            #endif
+        }
+        sleepAssertionID = 0
+    }
+
+    @objc func togglePreventSleep() {
+        preventSleepEnabled.toggle()
+        UserDefaults.standard.set(preventSleepEnabled, forKey: Constants.SleepPrevention.userDefaultsKey)
+
+        if preventSleepEnabled {
+            enableSleepPrevention()
+        } else {
+            disableSleepPrevention()
+        }
+        updateMenu()
+    }
+
     private func setupRestartManager() {
         restartManager = MultitouchRestartManager(appDelegate: self)
 
@@ -225,6 +293,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         launchAtLoginItem.state = isLaunchAtLoginEnabled() ? .on : .off
         launchAtLoginItem.target = self
         menu.addItem(launchAtLoginItem)
+
+        // Prevent Sleep toggle (keep running with lid closed)
+        let preventSleepItem = NSMenuItem(title: "Prevent Sleep (Keep Running)", action: #selector(togglePreventSleep), keyEquivalent: "")
+        preventSleepItem.state = preventSleepEnabled ? .on : .off
+        preventSleepItem.target = self
+        menu.addItem(preventSleepItem)
 
         menu.addItem(NSMenuItem.separator())
 

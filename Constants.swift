@@ -76,6 +76,16 @@ enum Constants {
         static let backoffMultiplier: Double = 1.5
     }
 
+    // MARK: - Sleep Prevention
+
+    enum SleepPrevention {
+        /// Reason reported to the system for the power assertion
+        static let assertionReason = "MagicTapper is actively processing Magic Mouse tap events"
+
+        /// UserDefaults key for the prevent-sleep toggle
+        static let userDefaultsKey = "preventSleepEnabled"
+    }
+
     // MARK: - System Notifications
 
     enum Notifications {
