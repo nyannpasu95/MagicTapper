@@ -9,7 +9,6 @@ final class MouseSpeedIOKitBackend: MouseSpeedBackend {
     // would otherwise open/close the IOHIDSystem service — a kernel round-trip
     // per tick. We hold the connection for the lifetime of the backend instead.
     private var cachedConnection: io_connect_t?
-    private var openError: Error?
 
     init() {}
 
@@ -20,10 +19,14 @@ final class MouseSpeedIOKitBackend: MouseSpeedBackend {
     }
 
     func readAcceleration() throws -> Double {
-        let connection = try openHIDSystem()
-
         var acceleration = 0.0
-        let result = IOHIDGetAccelerationWithKey(connection, accelerationKey, &acceleration)
+        var result = IOHIDGetAccelerationWithKey(try openHIDSystem(), accelerationKey, &acceleration)
+
+        if result != KERN_SUCCESS {
+            invalidateConnection()
+            result = IOHIDGetAccelerationWithKey(try openHIDSystem(), accelerationKey, &acceleration)
+        }
+
         guard result == KERN_SUCCESS else {
             throw MouseSpeedError.readFailed(kernelMessage(for: result))
         }
@@ -32,20 +35,19 @@ final class MouseSpeedIOKitBackend: MouseSpeedBackend {
     }
 
     func writeAcceleration(_ value: Double) throws {
-        let connection = try openHIDSystem()
+        var result = IOHIDSetAccelerationWithKey(try openHIDSystem(), accelerationKey, value)
 
-        let result = IOHIDSetAccelerationWithKey(connection, accelerationKey, value)
+        if result != KERN_SUCCESS {
+            invalidateConnection()
+            result = IOHIDSetAccelerationWithKey(try openHIDSystem(), accelerationKey, value)
+        }
+
         guard result == KERN_SUCCESS else {
             throw MouseSpeedError.writeFailed(kernelMessage(for: result))
         }
     }
 
     private func openHIDSystem() throws -> io_connect_t {
-        // If a previous open attempt failed, surface that error consistently
-        // rather than retrying the (slow) service lookup on every call.
-        if let openError = openError {
-            throw openError
-        }
         if let connection = cachedConnection {
             return connection
         }
@@ -53,22 +55,25 @@ final class MouseSpeedIOKitBackend: MouseSpeedBackend {
         let matchingDictionary = IOServiceMatching(kIOHIDSystemClass)
         let service = IOServiceGetMatchingService(kIOMainPortDefault, matchingDictionary)
         guard service != IO_OBJECT_NULL else {
-            let error = MouseSpeedError.backendUnavailable("IOHIDSystem service was not found.")
-            openError = error
-            throw error
+            throw MouseSpeedError.backendUnavailable("IOHIDSystem service was not found.")
         }
         defer { IOObjectRelease(service) }
 
         var connection = io_connect_t()
         let result = IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connection)
         guard result == KERN_SUCCESS else {
-            let error = MouseSpeedError.backendUnavailable(kernelMessage(for: result))
-            openError = error
-            throw error
+            throw MouseSpeedError.backendUnavailable(kernelMessage(for: result))
         }
 
         cachedConnection = connection
         return connection
+    }
+
+    private func invalidateConnection() {
+        if let connection = cachedConnection {
+            IOServiceClose(connection)
+        }
+        cachedConnection = nil
     }
 
     private func kernelMessage(for result: kern_return_t) -> String {

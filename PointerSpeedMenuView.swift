@@ -19,7 +19,6 @@ final class PointerSpeedMenuView: NSView {
     /// flush) until the user pauses or releases. UI label stays live.
     private let commitDelay: TimeInterval = 0.25
     private var pendingCommit: DispatchWorkItem?
-    private var isDraggingSlider = false
 
     init(currentSpeed: Double) {
         lastSuccessfulValue = MouseSpeedManager.clamp(currentSpeed)
@@ -87,9 +86,10 @@ final class PointerSpeedMenuView: NSView {
         let newValue = MouseSpeedManager.clamp(slider.doubleValue)
         updateValueLabel(newValue)
 
-        // While actively dragging, only the label updates live; the backend write
-        // is debounced so we don't hammer IOHIDSystem on every tick.
-        if isDraggingSlider {
+        // During an active drag the event type is .leftMouseDragged; debounce
+        // the backend write so we don't hammer IOHIDSystem on every tick.
+        // Any other event (initial click, release, programmatic) commits now.
+        if NSApp.currentEvent?.type == .leftMouseDragged {
             scheduleCommit(newValue)
         } else {
             commitValueNow(newValue)
@@ -133,20 +133,5 @@ final class PointerSpeedMenuView: NSView {
 
     private func updateValueLabel(_ speed: Double) {
         valueLabel.stringValue = String(format: "%.1f", speed)
-    }
-
-    // MARK: - Slider drag tracking
-
-    override func mouseDown(with event: NSEvent) {
-        isDraggingSlider = true
-        super.mouseDown(with: event)
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        isDraggingSlider = false
-        // Flush any pending value immediately on release so the final position
-        // is applied without waiting for the debounce window.
-        scheduleCommit(MouseSpeedManager.clamp(slider.doubleValue))
-        super.mouseUp(with: event)
     }
 }
