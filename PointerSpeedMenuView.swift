@@ -14,6 +14,13 @@ final class PointerSpeedMenuView: NSView {
     private let restoreButton = NSButton(title: "Restore Default", target: nil, action: nil)
     private var lastSuccessfulValue: Double
 
+    /// Debounce interval: while the slider is being dragged (continuous ticks),
+    /// we defer the costly `onSpeedChanged` write (IOHIDSystem call + UserDefaults
+    /// flush) until the user pauses or releases. UI label stays live.
+    private let commitDelay: TimeInterval = 0.25
+    private var pendingCommit: DispatchWorkItem?
+    private var isDraggingSlider = false
+
     init(currentSpeed: Double) {
         lastSuccessfulValue = MouseSpeedManager.clamp(currentSpeed)
         super.init(frame: NSRect(x: 0, y: 0, width: 260, height: 86))
@@ -24,6 +31,10 @@ final class PointerSpeedMenuView: NSView {
 
     required init?(coder: NSCoder) {
         nil
+    }
+
+    deinit {
+        pendingCommit?.cancel()
     }
 
     func setSpeed(_ speed: Double) {
@@ -76,15 +87,41 @@ final class PointerSpeedMenuView: NSView {
         let newValue = MouseSpeedManager.clamp(slider.doubleValue)
         updateValueLabel(newValue)
 
-        if onSpeedChanged?(newValue) == true {
-            lastSuccessfulValue = newValue
+        // While actively dragging, only the label updates live; the backend write
+        // is debounced so we don't hammer IOHIDSystem on every tick.
+        if isDraggingSlider {
+            scheduleCommit(newValue)
+        } else {
+            commitValueNow(newValue)
+        }
+    }
+
+    private func commitValueNow(_ value: Double) {
+        cancelPendingCommit()
+        if onSpeedChanged?(value) == true {
+            lastSuccessfulValue = value
         } else {
             slider.doubleValue = lastSuccessfulValue
             updateValueLabel(lastSuccessfulValue)
         }
     }
 
+    private func scheduleCommit(_ value: Double) {
+        cancelPendingCommit()
+        let work = DispatchWorkItem { [weak self] in
+            self?.commitValueNow(value)
+        }
+        pendingCommit = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + commitDelay, execute: work)
+    }
+
+    private func cancelPendingCommit() {
+        pendingCommit?.cancel()
+        pendingCommit = nil
+    }
+
     @objc private func restoreDefault() {
+        cancelPendingCommit()
         guard let restoredValue = onRestoreDefault?() else {
             slider.doubleValue = lastSuccessfulValue
             updateValueLabel(lastSuccessfulValue)
@@ -96,5 +133,20 @@ final class PointerSpeedMenuView: NSView {
 
     private func updateValueLabel(_ speed: Double) {
         valueLabel.stringValue = String(format: "%.1f", speed)
+    }
+
+    // MARK: - Slider drag tracking
+
+    override func mouseDown(with event: NSEvent) {
+        isDraggingSlider = true
+        super.mouseDown(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isDraggingSlider = false
+        // Flush any pending value immediately on release so the final position
+        // is applied without waiting for the debounce window.
+        scheduleCommit(MouseSpeedManager.clamp(slider.doubleValue))
+        super.mouseUp(with: event)
     }
 }

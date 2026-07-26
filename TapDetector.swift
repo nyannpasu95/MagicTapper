@@ -34,9 +34,7 @@ class TapDetector {
     private var touchStartTime: Date?
     private var touchStartLocation: CGPoint?
     private var lastClickTime: Date?
-    private var lastClickLocation: CGPoint?
     private var dragStartLocation: CGPoint?
-    private var previousLocation: CGPoint?
     private var hasMovedSignificantly: Bool = false  // 是否有明显移动（用于区分点击和滚动）
     private let nowProvider: () -> Date
 
@@ -98,7 +96,6 @@ class TapDetector {
             touchStartTime = now
             touchStartLocation = location
             dragStartLocation = location
-            previousLocation = location
 
             return TouchProcessResult(
                 shouldClick: false,
@@ -113,7 +110,6 @@ class TapDetector {
         currentState = .touching
         touchStartTime = now
         touchStartLocation = location
-        previousLocation = location
         hasMovedSignificantly = false
 
         return TouchProcessResult(
@@ -136,8 +132,6 @@ class TapDetector {
                 dragLocation: nil
             )
         }
-
-        previousLocation = location
 
         switch currentState {
         case .touching:
@@ -258,9 +252,8 @@ class TapDetector {
                         dragLocation: nil
                     )
 
-                    // 记录点击时间和位置，用于双击检测
+                    // 记录点击时间，用于双击检测
                     lastClickTime = now
-                    lastClickLocation = location
                 }
             } else {
                 #if DEBUG
@@ -292,7 +285,6 @@ class TapDetector {
         touchStartTime = nil
         touchStartLocation = nil
         dragStartLocation = nil
-        previousLocation = nil
         hasMovedSignificantly = false
     }
 
