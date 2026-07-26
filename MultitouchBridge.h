@@ -74,6 +74,9 @@ bool MTDeviceIsOpaqueSurface(MTDeviceRef device);
 // Check if device is built-in (trackpad) or external (Magic Mouse)
 bool MTDeviceIsBuiltIn(MTDeviceRef device);
 
+// Get a stable identifier suitable for comparing separate device-list snapshots
+int MTDeviceGetDeviceID(MTDeviceRef device, uint64_t *deviceID);
+
 #ifdef __cplusplus
 }
 #endif

@@ -103,7 +103,10 @@ enum Constants {
     // MARK: - App Info
 
     enum App {
-        static let version = "1.1"
         static let name = "MagicTapper"
+        static var version: String {
+            Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+                ?? "Development"
+        }
     }
 }

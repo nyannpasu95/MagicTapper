@@ -5,6 +5,7 @@ import Foundation
 /// `MultitouchRestartManager` talks to this protocol instead of reaching into
 /// `AppDelegate` internals, so the retry/backoff logic can be unit-tested with
 /// a fake controller and no AppKit/Cocoa dependency.
+@MainActor
 protocol MultitouchController: AnyObject {
     /// Whether the app's tap-to-click feature is currently enabled.
     var isAppEnabled: Bool { get }
@@ -12,13 +13,23 @@ protocol MultitouchController: AnyObject {
     /// Current number of active multitouch devices.
     var currentDeviceCount: Int { get }
 
+    /// Whether the registered devices still match the currently connected devices.
+    var areCurrentDevicesValid: Bool { get }
+
     /// Tear down the existing multitouch manager and create + start a fresh one.
     /// Returns the number of devices the new manager found.
     @discardableResult
     func stopAndRecreateMultitouch() -> Int
 }
 
+extension MultitouchController {
+    var areCurrentDevicesValid: Bool {
+        currentDeviceCount > 0
+    }
+}
+
 /// Manages multitouch device restart with retry logic and health monitoring.
+@MainActor
 final class MultitouchRestartManager {
 
     // MARK: - Types
@@ -52,7 +63,8 @@ final class MultitouchRestartManager {
 
     /// Schedules a closure to run after a delay. Injectable for tests so the
     /// retry loop can be driven synchronously.
-    typealias Scheduler = (TimeInterval, @escaping () -> Void) -> Void
+    typealias ScheduledWork = @MainActor @Sendable () -> Void
+    typealias Scheduler = @MainActor (TimeInterval, @escaping ScheduledWork) -> Void
 
     static let defaultScheduler: Scheduler = { delay, work in
         if delay > 0 {
@@ -69,7 +81,7 @@ final class MultitouchRestartManager {
     private let schedule: Scheduler
     private var currentAttempt = 0
     private var isRestarting = false
-    private var pendingRestartWorkItem: DispatchWorkItem?
+    private var restartGeneration: UInt = 0
 
     // Health check timer with adaptive interval
     private var healthCheckTimer: Timer?
@@ -89,15 +101,14 @@ final class MultitouchRestartManager {
 
     init(controller: MultitouchController,
          config: RetryConfig = .default,
-         schedule: @escaping Scheduler = MultitouchRestartManager.defaultScheduler) {
+         schedule: Scheduler? = nil) {
         self.controller = controller
         self.retryConfig = config
-        self.schedule = schedule
+        self.schedule = schedule ?? Self.defaultScheduler
     }
 
     deinit {
-        stopHealthCheck()
-        cancelPendingRestart()
+        healthCheckTimer?.invalidate()
     }
 
     // MARK: - Public Methods
@@ -110,6 +121,7 @@ final class MultitouchRestartManager {
         // Reset state for new restart sequence
         currentAttempt = 0
         isRestarting = true
+        let generation = restartGeneration
 
         #if DEBUG
         print("🔄 MultitouchRestartManager: Starting restart sequence (reason: \(reason.rawValue))")
@@ -117,19 +129,21 @@ final class MultitouchRestartManager {
 
         if initialDelay > 0 {
             schedule(initialDelay) { [weak self] in
-                self?.performRestart(reason: reason)
+                guard let self = self,
+                      self.isRestarting,
+                      self.restartGeneration == generation else { return }
+                self.performRestart(reason: reason, generation: generation)
             }
         } else {
-            performRestart(reason: reason)
+            performRestart(reason: reason, generation: generation)
         }
     }
 
     /// Cancel any pending restart operation
     func cancelPendingRestart() {
-        pendingRestartWorkItem?.cancel()
-        pendingRestartWorkItem = nil
         isRestarting = false
         currentAttempt = 0
+        restartGeneration &+= 1
     }
 
     /// Start periodic health check with adaptive interval
@@ -165,7 +179,9 @@ final class MultitouchRestartManager {
         healthCheckTimer?.invalidate()
 
         healthCheckTimer = Timer.scheduledTimer(withTimeInterval: currentHealthCheckInterval, repeats: false) { [weak self] _ in
-            self?.performHealthCheck()
+            Task { @MainActor [weak self] in
+                self?.performHealthCheck()
+            }
         }
     }
 
@@ -201,7 +217,9 @@ final class MultitouchRestartManager {
 
     // MARK: - Private Methods
 
-    private func performRestart(reason: RestartReason) {
+    private func performRestart(reason: RestartReason, generation: UInt) {
+        guard isRestarting, restartGeneration == generation else { return }
+
         guard let controller = controller else {
             isRestarting = false
             return
@@ -236,12 +254,12 @@ final class MultitouchRestartManager {
                 print("⚠️ No devices found, retrying in \(String(format: "%.1f", delay))s...")
                 #endif
 
-                let workItem = DispatchWorkItem { [weak self] in
-                    guard let self = self, self.isRestarting else { return }
-                    self.performRestart(reason: reason)
+                schedule(delay) { [weak self] in
+                    guard let self = self,
+                          self.isRestarting,
+                          self.restartGeneration == generation else { return }
+                    self.performRestart(reason: reason, generation: generation)
                 }
-                pendingRestartWorkItem = workItem
-                schedule(delay, workItem.perform)
             } else {
                 // All attempts exhausted
                 isRestarting = false
@@ -264,7 +282,7 @@ final class MultitouchRestartManager {
 
         let deviceCount = controller.currentDeviceCount
 
-        if deviceCount == 0 {
+        if deviceCount == 0 || !controller.areCurrentDevicesValid {
             #if DEBUG
             print("💓 Health check: No devices detected, triggering restart")
             #endif

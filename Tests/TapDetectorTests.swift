@@ -72,6 +72,37 @@ class TapDetectorTests: XCTestCase {
         XCTAssertFalse(result.shouldClick, "Tap exceeding movement threshold should be invalid")
     }
 
+    func testInvalidTap_EndLocationExceedsMovementThresholdWithoutMoveEvent() {
+        let startLocation = CGPoint(x: 100, y: 100)
+        let endLocation = CGPoint(x: 112, y: 100)
+
+        _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        advanceTime(by: 0.2)
+        let result = detector.touchEnded(at: endLocation, isRightSide: false)
+
+        XCTAssertFalse(
+            result.shouldClick,
+            "Final cursor displacement must be checked even when no move frame was received"
+        )
+    }
+
+    func testQuickTap_AllowsSmallButBoundedMovement() {
+        let startLocation = CGPoint(x: 100, y: 100)
+        let toleratedLocation = CGPoint(x: 108, y: 100)
+
+        _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        advanceTime(by: 0.05)
+        let toleratedResult = detector.touchEnded(at: toleratedLocation, isRightSide: false)
+        XCTAssertTrue(toleratedResult.shouldClick)
+
+        advanceTime(by: 0.4)
+        let excessiveLocation = CGPoint(x: 111, y: 100)
+        _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        advanceTime(by: 0.05)
+        let excessiveResult = detector.touchEnded(at: excessiveLocation, isRightSide: false)
+        XCTAssertFalse(excessiveResult.shouldClick)
+    }
+
     func testInvalidTap_ExceedsTimeThreshold() {
         let startLocation = CGPoint(x: 100, y: 100)
 

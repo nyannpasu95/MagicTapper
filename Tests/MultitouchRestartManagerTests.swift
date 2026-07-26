@@ -2,6 +2,7 @@ import XCTest
 
 @testable import MagicTapperLib
 
+@MainActor
 final class MultitouchRestartManagerTests: XCTestCase {
 
     // MARK: - RetryConfig.delay(forAttempt:)
@@ -143,6 +144,49 @@ final class MultitouchRestartManagerTests: XCTestCase {
 
         XCTAssertEqual(controller.recreateCallCount, 1, "No further attempts after cancel")
         XCTAssertNil(failedAttempts, "onRestartFailed should not fire after cancel")
+    }
+
+    func testCancelPendingRestartStopsInitialDelayedAttempt() {
+        let controller = FakeController(deviceCounts: [1], isEnabled: true)
+        var scheduledWork: [() -> Void] = []
+        let manager = MultitouchRestartManager(
+            controller: controller,
+            config: .init(maxAttempts: 3, initialDelay: 1, maxDelay: 1, backoffMultiplier: 1),
+            schedule: { _, work in scheduledWork.append(work) }
+        )
+
+        manager.restart(reason: .systemWake, afterDelay: 2)
+        XCTAssertEqual(scheduledWork.count, 1)
+
+        manager.cancelPendingRestart()
+        scheduledWork.forEach { $0() }
+
+        XCTAssertEqual(
+            controller.recreateCallCount,
+            0,
+            "Cancelling must invalidate the initial delayed attempt as well as retries"
+        )
+    }
+
+    func testOlderDelayedRestartCannotJoinNewRestartSequence() {
+        let controller = FakeController(deviceCounts: [1, 1], isEnabled: true)
+        var scheduledWork: [() -> Void] = []
+        let manager = MultitouchRestartManager(
+            controller: controller,
+            config: .init(maxAttempts: 3, initialDelay: 1, maxDelay: 1, backoffMultiplier: 1),
+            schedule: { _, work in scheduledWork.append(work) }
+        )
+
+        manager.restart(reason: .systemWake, afterDelay: 2)
+        manager.restart(reason: .bluetoothReconnect)
+        XCTAssertEqual(controller.recreateCallCount, 1)
+
+        scheduledWork.forEach { $0() }
+        XCTAssertEqual(
+            controller.recreateCallCount,
+            1,
+            "A delayed task from an older generation must not run inside the new sequence"
+        )
     }
 
     // MARK: - Successful start bookkeeping

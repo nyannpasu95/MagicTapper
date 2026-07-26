@@ -85,7 +85,8 @@ struct TapConfiguration: Codable, Equatable {
 }
 
 /// Manages tap configuration persistence and access
-class ConfigurationManager {
+@MainActor
+final class ConfigurationManager {
 
     // MARK: - Singleton
 

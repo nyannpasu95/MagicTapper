@@ -8,17 +8,26 @@ BUNDLE_ID="com.magictapper.app.debug"
 BUILD_DIR="build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 MODULE_CACHE="$BUILD_DIR/clang-module-cache"
-XCRUN="/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun"
-SWIFTC="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+XCRUN="/usr/bin/xcrun"
+XCODE_DEVELOPER_DIR="${DEVELOPER_DIR:-}"
+ARCH="${ARCH:-$(uname -m)}"
+BASE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Info.plist)
 
-if [ ! -x "$SWIFTC" ]; then
-    SWIFTC="swiftc"
+if [ "$XCODE_DEVELOPER_DIR" = "" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
+    XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 fi
 
-if [ -x "$XCRUN" ]; then
-    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+if [ "$XCODE_DEVELOPER_DIR" != "" ]; then
+    SDKROOT="$(env DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" "$XCRUN" --sdk macosx --show-sdk-path)"
+    SWIFTC="$(env DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" "$XCRUN" --find swiftc)"
 else
-    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+    SWIFTC="$("$XCRUN" --find swiftc)"
+fi
+
+if [ "$ARCH" != "arm64" ] && [ "$ARCH" != "x86_64" ]; then
+    echo "❌ Unsupported architecture: $ARCH"
+    exit 1
 fi
 
 echo "=========================================="
@@ -41,7 +50,7 @@ echo "📦 Compiling debug version..."
     -g \
     -Onone \
     -D DEBUG \
-    -target arm64-apple-macos13.0 \
+    -target "${ARCH}-apple-macos13.0" \
     -import-objc-header MultitouchBridge.h \
     -framework Cocoa \
     -framework ApplicationServices \
@@ -71,7 +80,7 @@ cp Info.plist "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName MagicTapper Debug" "$APP_PATH/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.1-debug" "$APP_PATH/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${BASE_VERSION}-debug" "$APP_PATH/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1" "$APP_PATH/Contents/Info.plist"
 
 # Copy app icon

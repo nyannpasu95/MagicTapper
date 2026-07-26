@@ -8,17 +8,19 @@ BUNDLE_ID="com.magictapper.app"
 BUILD_DIR="build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 MODULE_CACHE="$BUILD_DIR/clang-module-cache"
-XCRUN="/Applications/Xcode.app/Contents/Developer/usr/bin/xcrun"
-SWIFTC="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+XCRUN="/usr/bin/xcrun"
+XCODE_DEVELOPER_DIR="${DEVELOPER_DIR:-}"
 
-if [ ! -x "$SWIFTC" ]; then
-    SWIFTC="swiftc"
+if [ "$XCODE_DEVELOPER_DIR" = "" ] && [ -d /Applications/Xcode.app/Contents/Developer ]; then
+    XCODE_DEVELOPER_DIR="/Applications/Xcode.app/Contents/Developer"
 fi
 
-if [ -x "$XCRUN" ]; then
-    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+if [ "$XCODE_DEVELOPER_DIR" != "" ]; then
+    SDKROOT="$(env DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" "$XCRUN" --sdk macosx --show-sdk-path)"
+    SWIFTC="$(env DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" "$XCRUN" --find swiftc)"
 else
-    SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+    SDKROOT="$("$XCRUN" --sdk macosx --show-sdk-path)"
+    SWIFTC="$("$XCRUN" --find swiftc)"
 fi
 
 echo "=========================================="

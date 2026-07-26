@@ -1,8 +1,10 @@
 import Cocoa
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
+MainActor.assumeIsolated {
+    let app = NSApplication.shared
+    let delegate = AppDelegate()
+    app.delegate = delegate
 
-// Run the app
-_ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+    // NSApplicationMain starts on the process main thread.
+    _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)
+}

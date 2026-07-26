@@ -1,8 +1,9 @@
 import Cocoa
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import ServiceManagement
 import IOKit.pwr_mgt
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem?
     var multitouchManager: MultitouchManager?
@@ -27,7 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Prevent system sleep (keep running with lid closed)
     private var sleepAssertionID: IOPMAssertionID = 0
-    private var preventSleepEnabled = true
+    private var preventSleepEnabled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         prepareMouseSpeed()
@@ -62,6 +63,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
+        cancelActiveDrag()
         multitouchManager?.stop()
         disableSleepPrevention()
         unregisterForSleepWakeNotifications()
@@ -121,6 +123,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastSleepTime = Date()
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
+        cancelActiveDrag()
         multitouchManager?.stop()
     }
 
@@ -178,7 +181,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func loadPreventSleepPreference() {
         let defaults = UserDefaults.standard
         if defaults.object(forKey: Constants.SleepPrevention.userDefaultsKey) == nil {
-            preventSleepEnabled = true
+            // A background input utility should not change the Mac's normal
+            // energy behavior unless the user explicitly opts in.
+            preventSleepEnabled = false
         } else {
             preventSleepEnabled = defaults.bool(forKey: Constants.SleepPrevention.userDefaultsKey)
         }
@@ -382,6 +387,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func toggleEnabled() {
         isEnabled.toggle()
+        if !isEnabled {
+            cancelActiveDrag()
+        }
         multitouchManager?.setEnabled(isEnabled)
         updateMenu()
     }
@@ -433,6 +441,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func quit() {
+        cancelActiveDrag()
         multitouchManager?.stop()
         NSApplication.shared.terminate(nil)
     }
@@ -621,6 +630,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             mouseUp.post(tap: .cghidEventTap)
         }
     }
+
+    private func cancelActiveDrag() {
+        guard isDragging else { return }
+        let location = CGEvent(source: nil)?.location ?? .zero
+        endDrag(at: location)
+    }
 }
 
 // MARK: - MultitouchController
@@ -632,11 +647,16 @@ extension AppDelegate: MultitouchController {
         multitouchManager?.getDeviceCount() ?? 0
     }
 
+    var areCurrentDevicesValid: Bool {
+        multitouchManager?.validateDevices() ?? false
+    }
+
     /// Single controlled entry point used by `MultitouchRestartManager` to
     /// rebuild the multitouch stack. Keeps the restart manager from reaching
     /// into AppDelegate internals.
     @discardableResult
     func stopAndRecreateMultitouch() -> Int {
+        cancelActiveDrag()
         multitouchManager?.stop()
         multitouchManager = MultitouchManager()
         setupMultitouchCallbacks()

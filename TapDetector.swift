@@ -35,7 +35,7 @@ class TapDetector {
     private var touchStartLocation: CGPoint?
     private var lastClickTime: Date?
     private var dragStartLocation: CGPoint?
-    private var hasMovedSignificantly: Bool = false  // 是否有明显移动（用于区分点击和滚动）
+    private var maximumMovementDistance: CGFloat = 0
     private let nowProvider: () -> Date
 
     /// Initialize with explicit values (for testing)
@@ -110,7 +110,7 @@ class TapDetector {
         currentState = .touching
         touchStartTime = now
         touchStartLocation = location
-        hasMovedSignificantly = false
+        maximumMovementDistance = 0
 
         return TouchProcessResult(
             shouldClick: false,
@@ -135,12 +135,9 @@ class TapDetector {
 
         switch currentState {
         case .touching:
-            // 使用直线距离检测是否有明显移动
             let distance = hypot(location.x - startLocation.x, location.y - startLocation.y)
-
-            // 标记是否有明显移动（用于后续判断）
+            maximumMovementDistance = max(maximumMovementDistance, distance)
             if distance > tapMovementThreshold {
-                hasMovedSignificantly = true
                 #if DEBUG
                 print("📍 Significant movement detected: \(String(format: "%.2f", distance)) px")
                 #endif
@@ -202,6 +199,7 @@ class TapDetector {
         let now = nowProvider()
         let duration = now.timeIntervalSince(startTime)
         let distance = hypot(location.x - startLocation.x, location.y - startLocation.y)
+        maximumMovementDistance = max(maximumMovementDistance, distance)
 
         var result = TouchProcessResult(
             shouldClick: false,
@@ -215,14 +213,15 @@ class TapDetector {
         case .touching:
             // 智能点击检测：区分快速点击和滚动
             #if DEBUG
-            print("✋ Touch ended. Dist: \(String(format: "%.2f", distance)), Dur: \(String(format: "%.3f", duration)), Moved: \(hasMovedSignificantly)")
+            print("✋ Touch ended. Dist: \(String(format: "%.2f", distance)), Max dist: \(String(format: "%.2f", maximumMovementDistance)), Dur: \(String(format: "%.3f", duration))")
             #endif
 
             // 智能判定逻辑：
-            // 1. 快速点击（<0.15s）：即使有轻微移动也算点击（防止手抖影响）
-            // 2. 慢速触控：必须移动距离小才算点击（防止滚动误触）
+            // 1. 快速点击允许更大的轻微移动，避免手抖造成漏点。
+            // 2. 无论持续时间如何，都必须有移动上限，避免移动鼠标时误触。
             let isQuickTap = duration < quickTapThreshold
-            let isValidTap = (isQuickTap || !hasMovedSignificantly) &&
+            let movementLimit = isQuickTap ? tapMovementThreshold * 2.0 : tapMovementThreshold
+            let isValidTap = maximumMovementDistance <= movementLimit &&
                              duration < tapTimeThreshold &&
                              duration > minTapDuration
 
@@ -285,7 +284,7 @@ class TapDetector {
         touchStartTime = nil
         touchStartLocation = nil
         dragStartLocation = nil
-        hasMovedSignificantly = false
+        maximumMovementDistance = 0
     }
 
     /// Returns current mouse state

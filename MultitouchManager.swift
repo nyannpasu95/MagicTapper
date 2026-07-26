@@ -3,7 +3,7 @@ import CoreGraphics
 import AppKit
 
 // Swift wrapper for Multitouch framework
-class MultitouchManager {
+final class MultitouchManager: @unchecked Sendable {
     private var devices: [MTDeviceRef] = []
     private var tapDetector: TapDetector
     private var isEnabled = true
@@ -22,23 +22,27 @@ class MultitouchManager {
 
     // Singleton access guarded by a lock: the C touch callback fires on an
     // arbitrary framework thread while init/deinit run on the main thread.
-    private static let sharedInstanceLock = NSLock()
-    private static var _sharedInstance: MultitouchManager?
+    private final class SharedStorage: @unchecked Sendable {
+        let lock = NSLock()
+        var instance: MultitouchManager?
+    }
+
+    private static let sharedStorage = SharedStorage()
     fileprivate static var sharedInstance: MultitouchManager? {
-        sharedInstanceLock.lock()
-        defer { sharedInstanceLock.unlock() }
-        return _sharedInstance
+        sharedStorage.lock.lock()
+        defer { sharedStorage.lock.unlock() }
+        return sharedStorage.instance
     }
     fileprivate static func setSharedInstance(_ manager: MultitouchManager?) {
-        sharedInstanceLock.lock()
-        defer { sharedInstanceLock.unlock() }
-        _sharedInstance = manager
+        sharedStorage.lock.lock()
+        defer { sharedStorage.lock.unlock() }
+        sharedStorage.instance = manager
     }
     fileprivate static func clearSharedInstanceIfMatching(_ candidate: MultitouchManager) {
-        sharedInstanceLock.lock()
-        defer { sharedInstanceLock.unlock() }
-        if _sharedInstance === candidate {
-            _sharedInstance = nil
+        sharedStorage.lock.lock()
+        defer { sharedStorage.lock.unlock() }
+        if sharedStorage.instance === candidate {
+            sharedStorage.instance = nil
         }
     }
 
@@ -57,6 +61,7 @@ class MultitouchManager {
     var onDragMoved: ((CGPoint) -> Void)?
     var onDragEnded: ((CGPoint) -> Void)?
 
+    @MainActor
     init() {
         // Load configuration
         let config = ConfigurationManager.shared.current
@@ -126,10 +131,7 @@ class MultitouchManager {
         for i in 0..<count {
             let device = unsafeBitCast(CFArrayGetValueAtIndex(deviceArray, i), to: MTDeviceRef.self)
 
-            // Only monitor external devices (Magic Mouse), skip built-in trackpads
-            let isBuiltIn = MTDeviceIsBuiltIn(device)
-
-            if !isBuiltIn {
+            if isSupportedMagicMouse(device) {
                 // CFArrayGetValueAtIndex returns a *borrowed* reference whose
                 // only owner is `deviceArray`, which is released the moment this
                 // function returns. We hold these devices for the lifetime of the
@@ -157,6 +159,7 @@ class MultitouchManager {
             // Mark stopped first so any in-flight callback bails out before
             // touching the (soon-to-be-released) device pointer.
             isStopped = true
+            cancelActiveGestureOnTouchQueue()
 
             for device in devices {
                 MTUnregisterContactFrameCallback(device, touchCallback)
@@ -165,19 +168,14 @@ class MultitouchManager {
             }
             devices.removeAll()
 
-            // Reset transient gesture state so a stale touch can't carry over
-            // into the next start cycle after a restart.
-            activeTouch = -1
-            touchStartX = 0.0
-            touchStartY = 0.0
-            touchStartTime = 0
-            isCancelled = false
-            isDraggingActive = false
         }
     }
 
     func setEnabled(_ enabled: Bool) {
         performOnTouchQueue {
+            if isEnabled && !enabled {
+                cancelActiveGestureOnTouchQueue()
+            }
             isEnabled = enabled
         }
     }
@@ -205,15 +203,18 @@ class MultitouchManager {
         let deviceArray = deviceList.takeRetainedValue() as NSArray
         let count = CFArrayGetCount(deviceArray)
 
-        var externalDeviceCount = 0
+        var currentDeviceIDs = Set<UInt64>()
         for i in 0..<count {
             let device = unsafeBitCast(CFArrayGetValueAtIndex(deviceArray, i), to: MTDeviceRef.self)
-            if !MTDeviceIsBuiltIn(device) {
-                externalDeviceCount += 1
+            if isSupportedMagicMouse(device), let deviceID = stableDeviceID(for: device) {
+                currentDeviceIDs.insert(deviceID)
             }
         }
 
-        return externalDeviceCount > 0 && devices.count > 0
+        let registeredDeviceIDs = Set(devices.compactMap { stableDeviceID(for: $0) })
+        return registeredDeviceIDs.count == devices.count &&
+               !registeredDeviceIDs.isEmpty &&
+               registeredDeviceIDs == currentDeviceIDs
     }
 
     /// Called from the MultitouchSupport callback thread.
@@ -327,8 +328,10 @@ class MultitouchManager {
                             return
                         }
 
-                        // For non-drag touch move, use cached location to avoid CGEvent creation
-                        let result = tapDetector.touchMoved(to: lastCursorLocation)
+                        // Cursor displacement is part of tap validation. Passing the
+                        // cached start location here would make the movement threshold
+                        // ineffective until the touch ends.
+                        let result = tapDetector.touchMoved(to: getCursorLocation())
                         // No action needed for non-drag moves
                         _ = result
                     } else {
@@ -359,6 +362,36 @@ class MultitouchManager {
                 isCancelled = false
             }
         }
+    }
+
+    private func isSupportedMagicMouse(_ device: MTDeviceRef) -> Bool {
+        !MTDeviceIsBuiltIn(device) && MTDeviceIsOpaqueSurface(device)
+    }
+
+    private func stableDeviceID(for device: MTDeviceRef) -> UInt64? {
+        var deviceID: UInt64 = 0
+        return MTDeviceGetDeviceID(device, &deviceID) == 0 ? deviceID : nil
+    }
+
+    private func cancelActiveGestureOnTouchQueue() {
+        if isDraggingActive {
+            let location: CGPoint
+            if let event = CGEvent(source: nil) {
+                lastCursorLocation = event.location
+                location = event.location
+            } else {
+                location = lastCursorLocation
+            }
+            onDragEnded?(location)
+        }
+
+        tapDetector.reset()
+        activeTouch = -1
+        touchStartX = 0.0
+        touchStartY = 0.0
+        touchStartTime = 0
+        isCancelled = false
+        isDraggingActive = false
     }
 
     deinit {
