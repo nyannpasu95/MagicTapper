@@ -8,19 +8,26 @@
 
 **Finally, tap-to-click for your Apple Magic Mouse!** (v1.1)
 
-English | [中文](README_zh.md) | [日本語](README_ja.md)
+🌐 English | [中文](README_zh.md) | [日本語](README_ja.md)
 
-MagicTapper brings trackpad-style tap-to-click functionality to the Apple Magic Mouse. Simply tap the left or right side of your mouse surface to click - no more pressing down the button.
+🔗 **Website:** [https://nyannpasu95.github.io/MagicTapper/](https://nyannpasu95.github.io/MagicTapper/)
+
+MagicTapper brings trackpad-style tap-to-click functionality to the Apple Magic Mouse. Simply tap the left or right side of your mouse surface to click - no more pressing down the button. **Plus, double-tap and hold to drag** just like your MacBook trackpad!
 
 ## ✨ Features
 
-- 🖱️ **Tap left side** for left-click
-- 🖱️ **Hold right side (>0.1s)** for right-click (anti-false-trigger)
-- 🎯 **Double-tap and hold** to drag & drop
+### 🎯 **Double-Tap and Hold to Drag** (The #1 Feature!)
+Just like your MacBook trackpad, **double-tap and hold** to drag files, select text, and move windows. No more holding down the physical button for drag operations!
+
+### Core Tap-to-Click Features
+- 🖱️ **Tap left side** for left-click - instant, responsive clicking
+- 🖱️ **Hold right side (>0.1s)** for right-click (anti-false-trigger protection)
 - ⚡ **Fast & responsive** - optimized for minimal latency
 - 🚀 **Launch at Login** - auto-start with macOS
 - 🎛️ **Easy toggle** on/off from the menu bar
-- 🔒 **Privacy-focused** - runs entirely on your Mac, no network access
+- 🔒 **Privacy-focused** - runs entirely on your Mac, zero network access
+
+**Keywords:** Magic Mouse tap to click, Magic Mouse drag and drop, Magic Mouse gestures, Apple Magic Mouse utility, macOS Magic Mouse app, trackpad-style mouse, Magic Mouse enhancement
 
 ## 📋 Requirements
 
