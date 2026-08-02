@@ -53,6 +53,7 @@ let package = Package(
                 "Constants.swift",
                 "MouseSpeedManager.swift",
                 "MultitouchRestartManager.swift",
+                "MultitouchDeviceClassifier.swift",
                 "TapConfiguration.swift",
                 "TapDetector.swift"
             ]

@@ -55,6 +55,7 @@ compile_arch() {
     -framework MultitouchSupport \
     -Xlinker -rpath -Xlinker /System/Library/PrivateFrameworks \
     Constants.swift \
+    MultitouchDeviceClassifier.swift \
     TapConfiguration.swift \
     TapDetector.swift \
     MouseSpeedManager.swift \
@@ -111,7 +112,7 @@ echo ""
 echo "New Features in v1.1:"
 echo "  • Advanced gesture recognition with state machine"
 echo "  • Right-click detection (hold >0.1s)"
-echo "  • Double-tap drag and drop support"
+echo "  • Double-click and movement-activated drag and drop support"
 echo "  • Pointer speed slider"
 echo "  • Launch at Login functionality"
 echo "  • Enhanced menu bar with status display"

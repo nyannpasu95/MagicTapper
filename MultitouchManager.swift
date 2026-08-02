@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import AppKit
+import IOKit
 
 // Swift wrapper for Multitouch framework
 final class MultitouchManager: @unchecked Sendable {
@@ -14,6 +15,7 @@ final class MultitouchManager: @unchecked Sendable {
     private var isDraggingActive = false  // Track if we're in drag mode
     private var isCancelled = false  // 当前触摸是否已取消（用于防止取消后的误触）
     private var lastCursorLocation: CGPoint = .zero  // Cache cursor location
+    private var touchStartCursorLocation: CGPoint = .zero
 
     // Configuration-driven thresholds
     private var rightClickThreshold: Float      // X > threshold = right side
@@ -56,7 +58,7 @@ final class MultitouchManager: @unchecked Sendable {
     fileprivate let callbackLock = NSLock()
     fileprivate var isStopped = false
 
-    var onClickSynthesized: ((CGPoint, Bool) -> Void)?
+    var onClickSynthesized: ((CGPoint, Bool, Int) -> Void)?
     var onDragStarted: ((CGPoint) -> Void)?
     var onDragMoved: ((CGPoint) -> Void)?
     var onDragEnded: ((CGPoint) -> Void)?
@@ -147,6 +149,8 @@ final class MultitouchManager: @unchecked Sendable {
                 MTDeviceStart(device, 0)
             }
         }
+
+        NSLog("MagicTapper registered %d supported Magic Mouse device(s)", devices.count)
 
         return devices.count
     }
@@ -251,7 +255,7 @@ final class MultitouchManager: @unchecked Sendable {
 
                     // Handle click
                     if result.shouldClick, let clickLocation = result.clickLocation {
-                        onClickSynthesized?(clickLocation, result.isRightClick)
+                        onClickSynthesized?(clickLocation, result.isRightClick, result.clickCount)
                     }
 
                     // Handle drag end
@@ -274,6 +278,7 @@ final class MultitouchManager: @unchecked Sendable {
                 touchStartX = 0.0
                 touchStartY = 0.0
                 touchStartTime = 0
+                touchStartCursorLocation = .zero
                 isCancelled = false
             }
             return
@@ -291,16 +296,11 @@ final class MultitouchManager: @unchecked Sendable {
                     touchStartX = touch.normalized.position.x
                     touchStartY = touch.normalized.position.y
                     touchStartTime = CFAbsoluteTimeGetCurrent()
+                    touchStartCursorLocation = cgLocation
                     isCancelled = false
 
                     let isRightSide = touchStartX > rightClickThreshold
-                    let result = tapDetector.touchBegan(at: cgLocation, isRightSide: isRightSide)
-
-                    // Check if entering drag mode
-                    if result.isDragging {
-                        isDraggingActive = true
-                        onDragStarted?(cgLocation)
-                    }
+                    _ = tapDetector.touchBegan(at: cgLocation, isRightSide: isRightSide)
 
                 } else if activeTouch == touch.identifier {
                     // Same touch continuing
@@ -331,9 +331,18 @@ final class MultitouchManager: @unchecked Sendable {
                         // Cursor displacement is part of tap validation. Passing the
                         // cached start location here would make the movement threshold
                         // ineffective until the touch ends.
-                        let result = tapDetector.touchMoved(to: getCursorLocation())
-                        // No action needed for non-drag moves
-                        _ = result
+                        let cgLocation = getCursorLocation()
+                        let result = tapDetector.touchMoved(to: cgLocation)
+
+                        // A second tap becomes a drag only after cursor movement
+                        // crosses the tap movement threshold.
+                        if result.isDragging {
+                            isDraggingActive = true
+                            onDragStarted?(touchStartCursorLocation)
+                            if let dragLocation = result.dragLocation {
+                                onDragMoved?(dragLocation)
+                            }
+                        }
                     } else {
                         // Dragging - need fresh cursor position
                         let cgLocation = getCursorLocation()
@@ -348,8 +357,10 @@ final class MultitouchManager: @unchecked Sendable {
             }
         } else if numTouches > 1 {
             // Multiple touches - cancel current gesture (no cursor needed)
+            // Reset even when no single touch is active so a previous click cannot
+            // survive a multi-touch gesture as a stale double-click candidate.
+            tapDetector.reset()
             if activeTouch != -1 {
-                tapDetector.reset()
                 if isDraggingActive {
                     let cgLocation = getCursorLocation()
                     onDragEnded?(cgLocation)
@@ -359,13 +370,62 @@ final class MultitouchManager: @unchecked Sendable {
                 touchStartX = 0.0
                 touchStartY = 0.0
                 touchStartTime = 0
+                touchStartCursorLocation = .zero
                 isCancelled = false
             }
         }
     }
 
     private func isSupportedMagicMouse(_ device: MTDeviceRef) -> Bool {
-        !MTDeviceIsBuiltIn(device) && MTDeviceIsOpaqueSurface(device)
+        let descriptor = deviceDescriptor(for: device)
+        let isSupported = MultitouchDeviceClassifier.isMagicMouse(descriptor)
+
+        #if DEBUG
+        print("🖱️ Multitouch device: builtIn=\(descriptor.isBuiltIn), opaque=\(descriptor.isOpaqueSurface), product=\(descriptor.productName ?? "unknown"), preferenceKeys=\(descriptor.preferenceKeys.sorted()), supported=\(isSupported)")
+        #endif
+
+        return isSupported
+    }
+
+    private func deviceDescriptor(for device: MTDeviceRef) -> MultitouchDeviceDescriptor {
+        let isBuiltIn = MTDeviceIsBuiltIn(device)
+        let isOpaqueSurface = MTDeviceIsOpaqueSurface(device)
+        let service = MTDeviceGetService(device)
+
+        guard service != IO_OBJECT_NULL else {
+            return MultitouchDeviceDescriptor(
+                isBuiltIn: isBuiltIn,
+                isOpaqueSurface: isOpaqueSurface,
+                preferenceKeys: [],
+                productName: nil
+            )
+        }
+
+        var unmanagedProperties: Unmanaged<CFMutableDictionary>?
+        let result = IORegistryEntryCreateCFProperties(
+            service,
+            &unmanagedProperties,
+            kCFAllocatorDefault,
+            0
+        )
+
+        guard result == KERN_SUCCESS,
+              let properties = unmanagedProperties?.takeRetainedValue() as? [String: Any] else {
+            return MultitouchDeviceDescriptor(
+                isBuiltIn: isBuiltIn,
+                isOpaqueSurface: isOpaqueSurface,
+                preferenceKeys: [],
+                productName: nil
+            )
+        }
+
+        let preferences = properties["MultitouchPreferences"] as? [String: Any]
+        return MultitouchDeviceDescriptor(
+            isBuiltIn: isBuiltIn,
+            isOpaqueSurface: isOpaqueSurface,
+            preferenceKeys: Set(preferences?.keys.map { $0 } ?? []),
+            productName: properties["Product"] as? String
+        )
     }
 
     private func stableDeviceID(for device: MTDeviceRef) -> UInt64? {
@@ -390,6 +450,7 @@ final class MultitouchManager: @unchecked Sendable {
         touchStartX = 0.0
         touchStartY = 0.0
         touchStartTime = 0
+        touchStartCursorLocation = .zero
         isCancelled = false
         isDraggingActive = false
     }

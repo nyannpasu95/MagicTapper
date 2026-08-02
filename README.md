@@ -16,7 +16,8 @@ MagicTapper brings trackpad-style tap-to-click functionality to the Apple Magic 
 
 - 🖱️ **Tap left side** for left-click
 - 🖱️ **Hold right side (>0.1s)** for right-click (anti-false-trigger)
-- 🎯 **Double-tap and hold** to drag & drop
+- 🖱️ **Double-tap and release** for a system double-click
+- 🎯 **Double-tap, hold, and move** to drag & drop
 - ⚡ **Fast & responsive** - optimized for minimal latency
 - 🚀 **Launch at Login** - auto-start with macOS
 - 🎛️ **Easy toggle** on/off from the menu bar
@@ -81,7 +82,8 @@ That's it! You'll see a mouse icon in your menu bar.
 2. **Tap your Magic Mouse** surface:
    - **Quick tap left side** = left-click
    - **Hold right side (≥0.1s)** = right-click (context menu)
-   - **Double-tap and hold** = drag & drop
+   - **Double-tap and release** = double-click
+   - **Double-tap, hold, and move** = drag & drop
 3. You can still click the mouse button normally - tapping is just an additional way to click
 
 ### Menu Bar Controls
@@ -100,7 +102,8 @@ Click the mouse icon in your menu bar to access:
 
 - 💡 **Left-click**: Quick, light tap on the left side
 - 💡 **Right-click**: Press and hold (>0.1s) on the right side before releasing
-- 💡 **Drag & drop**: Double-tap quickly, keep finger down on second tap, then move
+- 💡 **Double-click**: Double-tap quickly and release the second tap without moving
+- 💡 **Drag & drop**: Double-tap quickly, keep finger down on the second tap, then move beyond the tap threshold
 - 💡 The dividing line between left/right is roughly at 60% from left
 - 💡 To disable temporarily, toggle "Tap to Click" off in menu bar
 - 💡 Pointer Speed changes the system-wide mouse speed, so it affects other mice too

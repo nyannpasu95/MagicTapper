@@ -60,6 +60,7 @@ echo "📦 Compiling debug version..."
     -framework MultitouchSupport \
     -Xlinker -rpath -Xlinker /System/Library/PrivateFrameworks \
     Constants.swift \
+    MultitouchDeviceClassifier.swift \
     TapConfiguration.swift \
     TapDetector.swift \
     MouseSpeedManager.swift \

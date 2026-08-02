@@ -278,7 +278,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         // Status indicator
-        let statusText = isEnabled ? "Status: Running" : "Status: Disabled"
+        let deviceCount = multitouchManager?.getDeviceCount() ?? 0
+        let statusText: String
+        if !isEnabled {
+            statusText = "Status: Disabled"
+        } else if deviceCount > 0 {
+            statusText = "Status: Running (\(deviceCount) Magic Mouse)"
+        } else {
+            statusText = "Status: Waiting for Magic Mouse"
+        }
         let statusMenuItem = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
         statusMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
@@ -427,7 +435,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Features:
         • Tap left side for left click
         • Hold tap on right side (>0.1s) for right click
-        • Double-tap and hold to drag and drop
+        • Double-tap and release for a double-click
+        • Keep the second tap held and move to drag and drop
         • Adjust global pointer speed beyond the system slider
         • Launch at login support
 
@@ -470,6 +479,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         multitouchManager = MultitouchManager()
         setupMultitouchCallbacks()
         let deviceCount = multitouchManager?.start() ?? 0
+        updateMenu()
 
         if deviceCount > 0 {
             restartManager?.markSuccessfulStart(deviceCount: deviceCount)
@@ -486,9 +496,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setupMultitouchCallbacks() {
         // Handle clicks
-        multitouchManager?.onClickSynthesized = { [weak self] location, isRightClick in
+        multitouchManager?.onClickSynthesized = { [weak self] location, isRightClick, clickCount in
             DispatchQueue.main.async {
-                self?.synthesizeClick(at: location, isRightClick: isRightClick)
+                self?.synthesizeClick(at: location, isRightClick: isRightClick, clickCount: clickCount)
             }
         }
 
@@ -582,19 +592,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func synthesizeClick(at location: CGPoint, isRightClick: Bool) {
+    func synthesizeClick(at location: CGPoint, isRightClick: Bool, clickCount: Int) {
+        let eventClickCount = Int64(max(1, clickCount))
+
         if isRightClick {
             if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: location, mouseButton: .right) {
+                mouseDown.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
                 mouseDown.post(tap: .cghidEventTap)
             }
             if let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .rightMouseUp, mouseCursorPosition: location, mouseButton: .right) {
+                mouseUp.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
                 mouseUp.post(tap: .cghidEventTap)
             }
         } else {
             if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: location, mouseButton: .left) {
+                mouseDown.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
                 mouseDown.post(tap: .cghidEventTap)
             }
             if let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left) {
+                mouseUp.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
                 mouseUp.post(tap: .cghidEventTap)
             }
         }

@@ -7,6 +7,7 @@
 #define MultitouchBridge_h
 
 #import <Foundation/Foundation.h>
+#import <IOKit/IOKitLib.h>
 
 // Touch point structure
 typedef struct {
@@ -76,6 +77,9 @@ bool MTDeviceIsBuiltIn(MTDeviceRef device);
 
 // Get a stable identifier suitable for comparing separate device-list snapshots
 int MTDeviceGetDeviceID(MTDeviceRef device, uint64_t *deviceID);
+
+// Get the backing IORegistry service so the device kind can be identified.
+io_service_t MTDeviceGetService(MTDeviceRef device);
 
 #ifdef __cplusplus
 }

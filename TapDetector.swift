@@ -5,8 +5,8 @@ import CoreGraphics
 enum MouseState: Equatable {
     case idle                    // 空闲状态
     case touching                // 接触中（单击）
+    case secondTapPending        // 第二次轻触，等待判定为双击或拖拽
     case dragging                // 拖拽中
-    case waitingForDoubleTap     // 等待双击
 }
 
 /// Result of processing a touch event
@@ -14,6 +14,7 @@ struct TouchProcessResult {
     let shouldClick: Bool           // 是否应该触发点击
     let clickLocation: CGPoint?     // 点击位置
     let isRightClick: Bool          // 是否为右键点击
+    let clickCount: Int             // 点击次数（无点击为 0，单击为 1，双击第二次为 2）
     let isDragging: Bool            // 是否处于拖拽状态
     let dragLocation: CGPoint?      // 拖拽位置（用于移动光标）
 }
@@ -34,6 +35,7 @@ class TapDetector {
     private var touchStartTime: Date?
     private var touchStartLocation: CGPoint?
     private var lastClickTime: Date?
+    private var lastClickLocation: CGPoint?
     private var dragStartLocation: CGPoint?
     private var maximumMovementDistance: CGFloat = 0
     private let nowProvider: () -> Date
@@ -87,26 +89,35 @@ class TapDetector {
     func touchBegan(at location: CGPoint, isRightSide: Bool) -> TouchProcessResult {
         let now = nowProvider()
 
-        // 检查是否在双击时间窗口内
+        // 只有时间和位置都足够接近的左键点击才能组成双击。
         if let lastTime = lastClickTime,
+           let lastLocation = lastClickLocation,
+           now.timeIntervalSince(lastTime) >= 0,
            now.timeIntervalSince(lastTime) < doubleTapTimeWindow,
+           hypot(location.x - lastLocation.x, location.y - lastLocation.y) <= tapMovementThreshold,
            currentState == .idle {
-            // 进入拖拽模式
-            currentState = .dragging
+            currentState = .secondTapPending
             touchStartTime = now
             touchStartLocation = location
             dragStartLocation = location
+            maximumMovementDistance = 0
+
+            // 第二次触摸已经消费了候选序列；无论最终成为双击、拖拽还是
+            // 被取消，之后的触摸都从一个新的点击序列开始。
+            clearClickHistory()
 
             return TouchProcessResult(
                 shouldClick: false,
                 clickLocation: nil,
                 isRightClick: false,
-                isDragging: true,
-                dragLocation: location
+                clickCount: 0,
+                isDragging: false,
+                dragLocation: nil
             )
         }
 
-        // 正常触摸开始
+        // 不是有效的第二次轻触时，旧候选不再参与后续手势。
+        clearClickHistory()
         currentState = .touching
         touchStartTime = now
         touchStartLocation = location
@@ -116,6 +127,7 @@ class TapDetector {
             shouldClick: false,
             clickLocation: nil,
             isRightClick: false,
+            clickCount: 0,
             isDragging: false,
             dragLocation: nil
         )
@@ -128,6 +140,7 @@ class TapDetector {
                 shouldClick: false,
                 clickLocation: nil,
                 isRightClick: false,
+                clickCount: 0,
                 isDragging: false,
                 dragLocation: nil
             )
@@ -143,6 +156,23 @@ class TapDetector {
                 #endif
             }
 
+        case .secondTapPending:
+            let distance = hypot(location.x - startLocation.x, location.y - startLocation.y)
+            maximumMovementDistance = max(maximumMovementDistance, distance)
+
+            if distance > tapMovementThreshold {
+                currentState = .dragging
+                dragStartLocation = location
+                return TouchProcessResult(
+                    shouldClick: false,
+                    clickLocation: nil,
+                    isRightClick: false,
+                    clickCount: 0,
+                    isDragging: true,
+                    dragLocation: location
+                )
+            }
+
         case .dragging:
             // 在拖拽状态下，使用更小的防抖阈值，并且总是返回拖拽状态
             if let dragStart = dragStartLocation {
@@ -154,6 +184,7 @@ class TapDetector {
                         shouldClick: false,
                         clickLocation: nil,
                         isRightClick: false,
+                        clickCount: 0,
                         isDragging: true,
                         dragLocation: location
                     )
@@ -163,6 +194,7 @@ class TapDetector {
                         shouldClick: false,
                         clickLocation: nil,
                         isRightClick: false,
+                        clickCount: 0,
                         isDragging: true,
                         dragLocation: nil  // 小幅移动不更新位置，但保持拖拽状态
                     )
@@ -177,6 +209,7 @@ class TapDetector {
             shouldClick: false,
             clickLocation: nil,
             isRightClick: false,
+            clickCount: 0,
             isDragging: currentState == .dragging,
             dragLocation: nil
         )
@@ -191,6 +224,7 @@ class TapDetector {
                 shouldClick: false,
                 clickLocation: nil,
                 isRightClick: false,
+                clickCount: 0,
                 isDragging: false,
                 dragLocation: nil
             )
@@ -205,6 +239,7 @@ class TapDetector {
             shouldClick: false,
             clickLocation: nil,
             isRightClick: false,
+            clickCount: 0,
             isDragging: false,
             dragLocation: nil
         )
@@ -235,6 +270,7 @@ class TapDetector {
                         shouldClick: true,
                         clickLocation: location,
                         isRightClick: true,
+                        clickCount: 1,
                         isDragging: false,
                         dragLocation: nil
                     )
@@ -247,17 +283,50 @@ class TapDetector {
                         shouldClick: true,
                         clickLocation: location,
                         isRightClick: false,
+                        clickCount: 1,
                         isDragging: false,
                         dragLocation: nil
                     )
 
                     // 记录点击时间，用于双击检测
                     lastClickTime = now
+                    lastClickLocation = location
                 }
             } else {
+                clearClickHistory()
                 #if DEBUG
                 print("⚠️ Tap ignored. Too far, too long, or moving fast.")
                 #endif
+            }
+
+        case .secondTapPending:
+            // 双击不使用“快速点击放宽移动范围”的规则，以避免轻微移动
+            // 被错误解释为双击而不是拖拽。
+            let isValidSecondTap = maximumMovementDistance <= tapMovementThreshold &&
+                                   duration < tapTimeThreshold &&
+                                   duration > minTapDuration
+
+            if isValidSecondTap,
+               duration >= rightClickTimeThreshold,
+               isRightSide {
+                // 第二次触摸位于右键区域且满足按住时长时，保留现有右键行为。
+                result = TouchProcessResult(
+                    shouldClick: true,
+                    clickLocation: location,
+                    isRightClick: true,
+                    clickCount: 1,
+                    isDragging: false,
+                    dragLocation: nil
+                )
+            } else if isValidSecondTap {
+                result = TouchProcessResult(
+                    shouldClick: true,
+                    clickLocation: location,
+                    isRightClick: false,
+                    clickCount: 2,
+                    isDragging: false,
+                    dragLocation: nil
+                )
             }
 
         case .dragging:
@@ -266,6 +335,7 @@ class TapDetector {
                 shouldClick: false,
                 clickLocation: nil,
                 isRightClick: false,
+                clickCount: 0,
                 isDragging: false,
                 dragLocation: nil
             )
@@ -274,17 +344,27 @@ class TapDetector {
             break
         }
 
-        reset()
+        resetActiveTouch()
         return result
     }
 
-    /// Resets tap detection state
+    /// Cancels the current gesture and any pending double-tap sequence.
     func reset() {
+        resetActiveTouch()
+        clearClickHistory()
+    }
+
+    private func resetActiveTouch() {
         currentState = .idle
         touchStartTime = nil
         touchStartLocation = nil
         dragStartLocation = nil
         maximumMovementDistance = 0
+    }
+
+    private func clearClickHistory() {
+        lastClickTime = nil
+        lastClickLocation = nil
     }
 
     /// Returns current mouse state
@@ -300,5 +380,10 @@ class TapDetector {
     /// Returns true if currently dragging
     var isDragging: Bool {
         return currentState == .dragging
+    }
+
+    /// Returns true while the second touch is waiting to become a double-click or drag.
+    var isSecondTapPending: Bool {
+        return currentState == .secondTapPending
     }
 }
