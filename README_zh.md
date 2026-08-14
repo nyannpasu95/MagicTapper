@@ -6,7 +6,7 @@
   <img alt="MagicTapper Logo" src="magictapper-light.png">
 </picture>
 
-**让你的 Apple Magic Mouse 支持轻点点击！** (v1.1)
+**让你的 Apple Magic Mouse 支持轻点点击！** (v1.2)
 
 [English](README.md) | 中文 | [日本語](README_ja.md)
 
@@ -91,6 +91,8 @@ cp -r build/MagicTapper.app /Applications/
 - **Status** - 显示运行状态
 - **Tap to Click** - 开启/关闭功能（勾选表示已启用）
 - **Launch at Login** - 随 macOS 自动启动（勾选表示已启用）
+- **Pointer Speed** - 实时滑块调节系统全局鼠标移动速度
+- **Sensitivity Settings** - 在设置窗口中精细调节轻点识别阈值
 - **Accessibility Instructions** - 权限设置帮助
 - **About** - 版本信息和功能介绍
 - **Quit** - 退出应用
@@ -103,6 +105,25 @@ cp -r build/MagicTapper.app /Applications/
 - 💡 **拖拽**：快速轻触两次，第二次保持按住并移动超过点击阈值
 - 💡 左右分界线大约在左起 60% 的位置
 - 💡 临时禁用：在菜单栏关闭 "Tap to Click"
+
+### 调节灵敏度
+
+如果轻点过于灵敏或不够灵敏，可以直接在应用内调节，无需重新编译：
+
+1. 点击菜单栏的 MagicTapper 图标
+2. 打开 **Sensitivity Settings…**
+3. 拖动滑块 — 修改立即生效，并在重启后保留
+
+可调参数：
+
+- **Max Tap Duration** — 轻点最长可持续多久仍算作点击
+- **Movement Tolerance** — 轻点期间光标最多可移动多少像素
+- **Right-Click Hold Time** — 右侧触发右键点击的最短按住时长
+- **Double-Tap Window** — 双击/拖拽判定的时间窗口
+- **Left/Right Boundary** — 鼠标表面左右点击区域的分界线
+- **Surface Movement Limit** — 手指滑动多远后轻点会被视为滚动而忽略
+
+数值越小判定越严格，越大越宽松。点击 **Reset to Defaults** 可恢复推荐值。
 
 ## ⚠️ 重要说明
 

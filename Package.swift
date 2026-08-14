@@ -34,6 +34,7 @@ let package = Package(
                 "README_ja.md",
                 "README_zh.md",
                 "TESTING.md",
+                "SettingsWindowController.swift",
                 "build-debug.sh",
                 "build.sh",
                 "debug-run.sh",
@@ -51,7 +52,9 @@ let package = Package(
             ],
             sources: [
                 "Constants.swift",
+                "EventSynthesizer.swift",
                 "MouseSpeedManager.swift",
+                "MultitouchDeviceMonitor.swift",
                 "MultitouchRestartManager.swift",
                 "MultitouchDeviceClassifier.swift",
                 "TapConfiguration.swift",

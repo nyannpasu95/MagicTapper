@@ -18,9 +18,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Restart manager for handling device reconnection
     private var restartManager: MultitouchRestartManager?
 
-    // Drag state
-    private var dragEventSource: CGEventSource?
-    private var isDragging = false
+    // Posts tap/drag mouse events directly from the multitouch queue
+    private let eventSynthesizer = EventSynthesizer()
+
+    // Event-driven Magic Mouse connect/disconnect detection via IOKit
+    // notifications; reacts immediately instead of waiting for health-check polls
+    private var deviceMonitor: MultitouchDeviceMonitor?
+
+    // Settings window for the tap-detection thresholds
+    private var settingsWindowController: SettingsWindowController?
 
     // Track sleep state for enhanced recovery
     private var lastSleepTime: Date?
@@ -63,6 +69,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
+        deviceMonitor?.stop()
         cancelActiveDrag()
         multitouchManager?.stop()
         disableSleepPrevention()
@@ -123,6 +130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastSleepTime = Date()
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
+        deviceMonitor?.stop()
         cancelActiveDrag()
         multitouchManager?.stop()
     }
@@ -153,6 +161,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         restartManager?.restart(reason: .systemWake, afterDelay: initialDelay)
+        startDeviceMonitor()
     }
 
     @objc private func screenDidUnlock() {
@@ -264,6 +273,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Device Monitor
+
+    private func startDeviceMonitor() {
+        deviceMonitor = MultitouchDeviceMonitor()
+        deviceMonitor?.onEvent = { [weak self] event in
+            DispatchQueue.main.async {
+                self?.handleDeviceMonitorEvent(event)
+            }
+        }
+        deviceMonitor?.start()
+    }
+
+    private func handleDeviceMonitorEvent(_ event: MultitouchDeviceMonitor.Event) {
+        guard isEnabled else { return }
+
+        switch event {
+        case .connected:
+            // Bluetooth needs a moment before the multitouch stack lists the
+            // new device; the restart manager retries until it appears.
+            if multitouchManager?.getDeviceCount() == 0 || !(multitouchManager?.validateDevices() ?? false) {
+                restartManager?.restart(reason: .bluetoothReconnect, afterDelay: Constants.SleepRecovery.bluetoothReconnectDelay)
+            }
+        case .disconnected:
+            // If our registered devices no longer match reality, re-enter the
+            // retry loop so a returning mouse is picked up promptly (also via
+            // the .connected event above).
+            if let manager = multitouchManager, !manager.validateDevices() {
+                restartManager?.restart(reason: .bluetoothReconnect)
+            }
+        }
+    }
+
     func setupMenuBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
@@ -319,6 +360,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let pointerSpeedItem = NSMenuItem()
         pointerSpeedItem.view = makePointerSpeedMenuView()
         menu.addItem(pointerSpeedItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Sensitivity settings window
+        let settingsItem = NSMenuItem(title: "Sensitivity Settings…", action: #selector(showSettings), keyEquivalent: "")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -438,6 +486,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         • Double-tap and release for a double-click
         • Keep the second tap held and move to drag and drop
         • Adjust global pointer speed beyond the system slider
+        • Adjustable tap sensitivity (Sensitivity Settings)
         • Launch at login support
 
         Version \(Constants.App.version)
@@ -447,6 +496,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+
+    @objc func showSettings() {
+        if settingsWindowController == nil {
+            settingsWindowController = SettingsWindowController()
+        }
+        settingsWindowController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc func quit() {
@@ -469,9 +526,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard !hasStartedMultitouch else { return }
         hasStartedMultitouch = true
 
-        // Create event source for drag events
-        dragEventSource = CGEventSource(stateID: .hidSystemState)
-
         // Setup restart manager first
         setupRestartManager()
 
@@ -479,6 +533,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         multitouchManager = MultitouchManager()
         setupMultitouchCallbacks()
         let deviceCount = multitouchManager?.start() ?? 0
+        startDeviceMonitor()
         updateMenu()
 
         if deviceCount > 0 {
@@ -495,32 +550,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setupMultitouchCallbacks() {
-        // Handle clicks
-        multitouchManager?.onClickSynthesized = { [weak self] location, isRightClick, clickCount in
-            DispatchQueue.main.async {
-                self?.synthesizeClick(at: location, isRightClick: isRightClick, clickCount: clickCount)
-            }
+        // Events are posted straight from the multitouch touch queue. Hopping
+        // through the main thread would tie tap/drag latency to UI work such
+        // as menu tracking or modal alerts.
+        multitouchManager?.onClickSynthesized = { [weak eventSynthesizer] location, isRightClick, clickCount in
+            eventSynthesizer?.synthesizeClick(at: location, isRightClick: isRightClick, clickCount: clickCount)
         }
 
-        // Handle drag start
-        multitouchManager?.onDragStarted = { [weak self] location in
-            DispatchQueue.main.async {
-                self?.startDrag(at: location)
-            }
+        multitouchManager?.onDragStarted = { [weak eventSynthesizer] location in
+            eventSynthesizer?.startDrag(at: location)
         }
 
-        // Handle drag movement
-        multitouchManager?.onDragMoved = { [weak self] location in
-            DispatchQueue.main.async {
-                self?.moveDrag(to: location)
-            }
+        multitouchManager?.onDragMoved = { [weak eventSynthesizer] location in
+            eventSynthesizer?.moveDrag(to: location)
         }
 
-        // Handle drag end
-        multitouchManager?.onDragEnded = { [weak self] location in
-            DispatchQueue.main.async {
-                self?.endDrag(at: location)
-            }
+        multitouchManager?.onDragEnded = { [weak eventSynthesizer] location in
+            eventSynthesizer?.endDrag(at: location)
         }
     }
 
@@ -592,65 +638,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func synthesizeClick(at location: CGPoint, isRightClick: Bool, clickCount: Int) {
-        let eventClickCount = Int64(max(1, clickCount))
-
-        if isRightClick {
-            if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .rightMouseDown, mouseCursorPosition: location, mouseButton: .right) {
-                mouseDown.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
-                mouseDown.post(tap: .cghidEventTap)
-            }
-            if let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .rightMouseUp, mouseCursorPosition: location, mouseButton: .right) {
-                mouseUp.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
-                mouseUp.post(tap: .cghidEventTap)
-            }
-        } else {
-            if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: location, mouseButton: .left) {
-                mouseDown.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
-                mouseDown.post(tap: .cghidEventTap)
-            }
-            if let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left) {
-                mouseUp.setIntegerValueField(.mouseEventClickState, value: eventClickCount)
-                mouseUp.post(tap: .cghidEventTap)
-            }
-        }
-    }
-
     // MARK: - Drag & Drop Support
 
-    func startDrag(at location: CGPoint) {
-        guard !isDragging else { return }
-        isDragging = true
-
-        // Synthesize mouse down event to start drag
-        if let mouseDown = CGEvent(mouseEventSource: dragEventSource, mouseType: .leftMouseDown, mouseCursorPosition: location, mouseButton: .left) {
-            mouseDown.post(tap: .cghidEventTap)
-        }
-    }
-
-    func moveDrag(to location: CGPoint) {
-        guard isDragging else { return }
-
-        // Synthesize mouse dragged event
-        if let mouseDrag = CGEvent(mouseEventSource: dragEventSource, mouseType: .leftMouseDragged, mouseCursorPosition: location, mouseButton: .left) {
-            mouseDrag.post(tap: .cghidEventTap)
-        }
-    }
-
-    func endDrag(at location: CGPoint) {
-        guard isDragging else { return }
-        isDragging = false
-
-        // Synthesize mouse up event to end drag
-        if let mouseUp = CGEvent(mouseEventSource: dragEventSource, mouseType: .leftMouseUp, mouseCursorPosition: location, mouseButton: .left) {
-            mouseUp.post(tap: .cghidEventTap)
-        }
-    }
-
     private func cancelActiveDrag() {
-        guard isDragging else { return }
-        let location = CGEvent(source: nil)?.location ?? .zero
-        endDrag(at: location)
+        eventSynthesizer.cancelActiveDrag()
     }
 }
 

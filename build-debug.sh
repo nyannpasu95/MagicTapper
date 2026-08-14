@@ -63,11 +63,14 @@ echo "📦 Compiling debug version..."
     MultitouchDeviceClassifier.swift \
     TapConfiguration.swift \
     TapDetector.swift \
+    EventSynthesizer.swift \
     MouseSpeedManager.swift \
     MouseSpeedIOKitBackend.swift \
     PointerSpeedMenuView.swift \
+    MultitouchDeviceMonitor.swift \
     MultitouchManager.swift \
     MultitouchRestartManager.swift \
+    SettingsWindowController.swift \
     AppDelegate.swift \
     main.swift
 

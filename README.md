@@ -6,7 +6,7 @@
   <img alt="MagicTapper Logo" src="magictapper-light.png">
 </picture>
 
-**Finally, tap-to-click for your Apple Magic Mouse!** (v1.1)
+**Finally, tap-to-click for your Apple Magic Mouse!** (v1.2)
 
 English | [中文](README_zh.md) | [日本語](README_ja.md)
 
@@ -21,6 +21,7 @@ MagicTapper brings trackpad-style tap-to-click functionality to the Apple Magic 
 - ⚡ **Fast & responsive** - optimized for minimal latency
 - 🚀 **Launch at Login** - auto-start with macOS
 - 🎛️ **Easy toggle** on/off from the menu bar
+- 🎚️ **Adjustable sensitivity** - fine-tune tap detection without rebuilding
 - 🔒 **Privacy-focused** - runs entirely on your Mac, no network access
 
 ## 📋 Requirements
@@ -94,6 +95,7 @@ Click the mouse icon in your menu bar to access:
 - **Tap to Click** - Enable/disable the feature (checkmark shows when enabled)
 - **Launch at Login** - Auto-start with macOS (checkmark when enabled)
 - **Pointer Speed** - Adjust global macOS mouse pointer speed with a live slider
+- **Sensitivity Settings** - Fine-tune tap detection thresholds in a settings window
 - **Accessibility Instructions** - Help with permissions
 - **About** - Version info and features
 - **Quit** - Exit the app
@@ -168,16 +170,22 @@ These permissions are granted by you in System Settings and can be revoked at an
 
 ### Adjusting sensitivity
 
-If taps are too sensitive or not sensitive enough, you can adjust the settings:
+If taps are too sensitive or not sensitive enough, tune them in the app — no rebuild required:
 
-1. Open `MultitouchManager.swift` in a text editor
-2. Find these lines near the top:
-   ```swift
-   tapTimeThreshold: 0.25,      // How long a tap can be (seconds)
-   tapMovementThreshold: 0.08    // How much finger movement is allowed
-   ```
-3. Make the numbers **smaller** for stricter detection, **larger** for more lenient
-4. Save and run `./build.sh` again
+1. Click the MagicTapper icon in the menu bar
+2. Open **Sensitivity Settings…**
+3. Drag the sliders — changes apply immediately and persist across launches
+
+What you can tune:
+
+- **Max Tap Duration** — how long a tap may last and still count as a click
+- **Movement Tolerance** — how far the cursor may move during a tap
+- **Right-Click Hold Time** — minimum hold time on the right side for a right-click
+- **Double-Tap Window** — time window for double-tap and drag detection
+- **Left/Right Boundary** — where the mouse surface splits into left/right click zones
+- **Surface Movement Limit** — how far the finger may slide before a tap is treated as scrolling
+
+Smaller values mean stricter detection, larger values more lenient. Click **Reset to Defaults** to restore the recommended values.
 
 ## 🗑️ Uninstalling
 

@@ -6,7 +6,7 @@
   <img alt="MagicTapper Logo" src="magictapper-light.png">
 </picture>
 
-**Apple Magic Mouse にタップでクリック機能を！** (v1.1)
+**Apple Magic Mouse にタップでクリック機能を！** (v1.2)
 
 [English](README.md) | [中文](README_zh.md) | 日本語
 
@@ -91,6 +91,8 @@ cp -r build/MagicTapper.app /Applications/
 - **Status** - 動作状態を表示
 - **Tap to Click** - 機能のオン/オフ（チェックマークで有効状態を表示）
 - **Launch at Login** - macOS と一緒に自動起動（チェックマークで有効状態を表示）
+- **Pointer Speed** - ライブスライダーでシステム全体のマウス速度を調整
+- **Sensitivity Settings** - 設定ウィンドウでタップ検出のしきい値を微調整
 - **Accessibility Instructions** - 権限設定のヘルプ
 - **About** - バージョン情報と機能
 - **Quit** - アプリを終了
@@ -103,6 +105,25 @@ cp -r build/MagicTapper.app /Applications/
 - 💡 **ドラッグ＆ドロップ**: 素早く2回タップし、2回目を押したまましきい値を超えて移動
 - 💡 左右の境界線は左から約60%の位置
 - 💡 一時的に無効にするには、メニューバーで「Tap to Click」をオフに
+
+### 感度の調整
+
+タップが敏感すぎる・鈍すぎる場合は、アプリ内で調整できます（再ビルド不要）：
+
+1. メニューバーの MagicTapper アイコンをクリック
+2. **Sensitivity Settings…** を開く
+3. スライダーを動かす — 変更は即座に反映され、再起動後も保持されます
+
+調整できる項目：
+
+- **Max Tap Duration** — クリックと判定されるタップの最長時間
+- **Movement Tolerance** — タップ中にカーソルが動ける最大距離
+- **Right-Click Hold Time** — 右側で右クリックと判定される最短押下時間
+- **Double-Tap Window** — ダブルタップ/ドラッグ判定の時間ウィンドウ
+- **Left/Right Boundary** — マウス表面の左右クリック領域の境界線
+- **Surface Movement Limit** — 指がどれだけ滑ったらスクロールとみなすか
+
+値を小さくすると厳格に、大きくすると緩く判定されます。**Reset to Defaults** で推奨値に戻せます。
 
 ## ⚠️ 重要な情報
 
