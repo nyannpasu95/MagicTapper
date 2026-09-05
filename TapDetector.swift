@@ -38,13 +38,22 @@ class TapDetector {
     private var lastClickLocation: CGPoint?
     private var dragStartLocation: CGPoint?
     private var maximumMovementDistance: CGFloat = 0
+    /// Total cursor distance travelled during the touch. Displacement-based
+    /// checks can be fooled by movement that leaves and returns; a path that
+    /// long always means the user was moving the mouse, not tapping it.
+    private var cursorPathLength: CGFloat = 0
+    private var previousCursorLocation: CGPoint?
     private let nowProvider: () -> Date
+
+    /// A tap may wobble, but its total travel should stay within a small
+    /// multiple of the displacement limit.
+    private let cursorPathLimitMultiplier: CGFloat = 3.0
 
     /// Initialize with explicit values (for testing)
     init(
         tapTimeThreshold: TimeInterval = 0.3,
         tapMovementThreshold: CGFloat = 5.0,
-        rightClickTimeThreshold: TimeInterval = 0.1,
+        rightClickTimeThreshold: TimeInterval = 0.16,
         doubleTapTimeWindow: TimeInterval = 0.3,
         dragThreshold: CGFloat = 2.0,
         minTapDuration: TimeInterval = 0.03,
@@ -101,6 +110,8 @@ class TapDetector {
             touchStartLocation = location
             dragStartLocation = location
             maximumMovementDistance = 0
+            cursorPathLength = 0
+            previousCursorLocation = location
 
             // 第二次触摸已经消费了候选序列；无论最终成为双击、拖拽还是
             // 被取消，之后的触摸都从一个新的点击序列开始。
@@ -122,6 +133,8 @@ class TapDetector {
         touchStartTime = now
         touchStartLocation = location
         maximumMovementDistance = 0
+        cursorPathLength = 0
+        previousCursorLocation = location
 
         return TouchProcessResult(
             shouldClick: false,
@@ -145,6 +158,11 @@ class TapDetector {
                 dragLocation: nil
             )
         }
+
+        if let previous = previousCursorLocation {
+            cursorPathLength += hypot(location.x - previous.x, location.y - previous.y)
+        }
+        previousCursorLocation = location
 
         switch currentState {
         case .touching:
@@ -234,6 +252,10 @@ class TapDetector {
         let duration = now.timeIntervalSince(startTime)
         let distance = hypot(location.x - startLocation.x, location.y - startLocation.y)
         maximumMovementDistance = max(maximumMovementDistance, distance)
+        if let previous = previousCursorLocation {
+            cursorPathLength += hypot(location.x - previous.x, location.y - previous.y)
+            previousCursorLocation = location
+        }
 
         var result = TouchProcessResult(
             shouldClick: false,
@@ -254,9 +276,11 @@ class TapDetector {
             // 智能判定逻辑：
             // 1. 快速点击允许更大的轻微移动，避免手抖造成漏点。
             // 2. 无论持续时间如何，都必须有移动上限，避免移动鼠标时误触。
+            // 3. 除位移外还校验累积路程：来回移动可以骗过位移，骗不过路程。
             let isQuickTap = duration < quickTapThreshold
             let movementLimit = isQuickTap ? tapMovementThreshold * 2.0 : tapMovementThreshold
             let isValidTap = maximumMovementDistance <= movementLimit &&
+                             cursorPathLength <= movementLimit * cursorPathLimitMultiplier &&
                              duration < tapTimeThreshold &&
                              duration > minTapDuration
 
@@ -303,6 +327,7 @@ class TapDetector {
             // 双击不使用“快速点击放宽移动范围”的规则，以避免轻微移动
             // 被错误解释为双击而不是拖拽。
             let isValidSecondTap = maximumMovementDistance <= tapMovementThreshold &&
+                                   cursorPathLength <= tapMovementThreshold * cursorPathLimitMultiplier &&
                                    duration < tapTimeThreshold &&
                                    duration > minTapDuration
 
@@ -360,6 +385,8 @@ class TapDetector {
         touchStartLocation = nil
         dragStartLocation = nil
         maximumMovementDistance = 0
+        cursorPathLength = 0
+        previousCursorLocation = nil
     }
 
     private func clearClickHistory() {

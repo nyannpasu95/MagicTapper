@@ -75,6 +75,33 @@ final class SettingsWindowController: NSWindowController {
             read: { Double($0.surfaceMovementThreshold) * 100.0 },
             write: { $0.surfaceMovementThreshold = Float($1 / 100.0) }
         ),
+        SliderSpec(
+            title: "Surface Path Limit",
+            unit: "%",
+            decimals: 0,
+            minimumValue: 4,
+            maximumValue: 25,
+            read: { Double($0.surfacePathThreshold) * 100.0 },
+            write: { $0.surfacePathThreshold = Float($1 / 100.0) }
+        ),
+        SliderSpec(
+            title: "Scroll Velocity Limit",
+            unit: "/s",
+            decimals: 1,
+            minimumValue: 0.3,
+            maximumValue: 3.0,
+            read: { Double($0.scrollVelocityThreshold) },
+            write: { $0.scrollVelocityThreshold = Float($1) }
+        ),
+        SliderSpec(
+            title: "Min Tap Duration",
+            unit: "s",
+            decimals: 2,
+            minimumValue: 0.01,
+            maximumValue: 0.10,
+            read: { $0.minTapDuration },
+            write: { $0.minTapDuration = $1 }
+        ),
     ]
 
     private var sliders: [NSSlider] = []
@@ -92,6 +119,7 @@ final class SettingsWindowController: NSWindowController {
         window.styleMask = [.titled, .closable]
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
 
         buildContent(in: contentViewController.view)
         reloadFromConfiguration()
@@ -214,5 +242,17 @@ final class SettingsWindowController: NSWindowController {
     private func updateValueLabel(index: Int, value: Double) {
         let spec = specs[index]
         valueLabels[index].stringValue = String(format: "%.\(spec.decimals)f %@", value, spec.unit as NSString)
+    }
+}
+
+extension SettingsWindowController: NSWindowDelegate {
+    /// A slider change is committed after a debounce delay; closing the window
+    /// inside that window would otherwise silently drop the final value.
+    func windowWillClose(_ notification: Notification) {
+        pendingCommit?.cancel()
+        pendingCommit = nil
+        for (index, slider) in sliders.enumerated() {
+            commit(index: index, value: slider.doubleValue)
+        }
     }
 }

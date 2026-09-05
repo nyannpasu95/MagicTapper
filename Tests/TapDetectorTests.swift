@@ -380,6 +380,44 @@ class TapDetectorTests: XCTestCase {
         XCTAssertEqual(detector.state, .idle, "Should return to idle state")
     }
 
+    // MARK: - Cursor Path (Rub / Round-trip Movement)
+
+    func testTap_OscillatingWithinDisplacementLimitIsRejectedByPathLength() {
+        let startLocation = CGPoint(x: 100, y: 100)
+        let nudged = CGPoint(x: 102, y: 100)
+
+        _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        // Eight 2px back-and-forth moves: peak displacement stays at 2px
+        // (within the 5px limit), but the total path is 16px, beyond the
+        // 3x path budget. A rub like this is movement, not a tap.
+        for index in 1...8 {
+            advanceTime(by: 0.02)
+            _ = detector.touchMoved(to: index.isMultiple(of: 2) ? startLocation : nudged)
+        }
+        advanceTime(by: 0.02)
+        let result = detector.touchEnded(at: startLocation, isRightSide: false)
+
+        XCTAssertFalse(result.shouldClick, "Round-trip cursor movement must not produce a click")
+    }
+
+    func testTap_SmallTremorWithinPathBudgetStillClicks() {
+        let startLocation = CGPoint(x: 100, y: 100)
+        let nudged = CGPoint(x: 102, y: 100)
+
+        _ = detector.touchBegan(at: startLocation, isRightSide: false)
+        // Three 2px moves: total path 6px, well within budget — hand tremor
+        // must not suppress a genuine tap.
+        for index in 1...3 {
+            advanceTime(by: 0.02)
+            _ = detector.touchMoved(to: index.isMultiple(of: 2) ? startLocation : nudged)
+        }
+        advanceTime(by: 0.02)
+        let result = detector.touchEnded(at: startLocation, isRightSide: false)
+
+        XCTAssertTrue(result.shouldClick, "Minor tremor should not invalidate a tap")
+        XCTAssertEqual(result.clickCount, 1)
+    }
+
     // MARK: - Edge Cases
 
     func testTouchEnded_WithoutTouchBegan() {

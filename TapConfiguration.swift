@@ -36,6 +36,15 @@ struct TapConfiguration: Codable, Equatable {
     /// Surface movement threshold to cancel tap (0.0-1.0, normalized)
     var surfaceMovementThreshold: Float
 
+    /// Cumulative surface path length that cancels a tap (0.0-1.0 normalized).
+    /// Unlike displacement, total travel cannot be hidden by sliding back to
+    /// the start point, so it catches rubs and aborted scrolls.
+    var surfacePathThreshold: Float
+
+    /// Surface speed above which a touch is treated as scrolling and cancelled
+    /// (normalized units/second). Scrolls are fast; tap jitter is not.
+    var scrollVelocityThreshold: Float
+
     /// Time threshold for quick touch detection (seconds)
     var quickTouchTimeThreshold: TimeInterval
 
@@ -46,7 +55,9 @@ struct TapConfiguration: Codable, Equatable {
         // TapDetector defaults (current optimized values)
         tapTimeThreshold: 0.35,
         tapMovementThreshold: 8.0,
-        rightClickTimeThreshold: 0.1,
+        // 0.1s sat inside the natural duration of a deliberate click, so
+        // ordinary clicks on the right half were misread as right-clicks.
+        rightClickTimeThreshold: 0.16,
         doubleTapTimeWindow: 0.3,
         minTapDuration: 0.03,
         dragThreshold: 2.0,
@@ -54,6 +65,8 @@ struct TapConfiguration: Codable, Equatable {
         // MultitouchManager defaults
         rightClickAreaThreshold: 0.6,
         surfaceMovementThreshold: 0.04,
+        surfacePathThreshold: 0.10,
+        scrollVelocityThreshold: 1.0,
         quickTouchTimeThreshold: 0.15
     )
 
@@ -62,13 +75,15 @@ struct TapConfiguration: Codable, Equatable {
     init(
         tapTimeThreshold: TimeInterval = 0.35,
         tapMovementThreshold: CGFloat = 8.0,
-        rightClickTimeThreshold: TimeInterval = 0.1,
+        rightClickTimeThreshold: TimeInterval = 0.16,
         doubleTapTimeWindow: TimeInterval = 0.3,
         minTapDuration: TimeInterval = 0.03,
         dragThreshold: CGFloat = 2.0,
         quickTapThreshold: TimeInterval = 0.15,
         rightClickAreaThreshold: Float = 0.6,
         surfaceMovementThreshold: Float = 0.04,
+        surfacePathThreshold: Float = 0.10,
+        scrollVelocityThreshold: Float = 1.0,
         quickTouchTimeThreshold: TimeInterval = 0.15
     ) {
         self.tapTimeThreshold = tapTimeThreshold
@@ -80,7 +95,30 @@ struct TapConfiguration: Codable, Equatable {
         self.quickTapThreshold = quickTapThreshold
         self.rightClickAreaThreshold = rightClickAreaThreshold
         self.surfaceMovementThreshold = surfaceMovementThreshold
+        self.surfacePathThreshold = surfacePathThreshold
+        self.scrollVelocityThreshold = scrollVelocityThreshold
         self.quickTouchTimeThreshold = quickTouchTimeThreshold
+    }
+
+    /// Tolerant decoding: configurations persisted by older app versions lack
+    /// the newer keys. Decoding each key with a fallback keeps those users'
+    /// custom values instead of silently resetting everything to defaults.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = TapConfiguration.default
+
+        tapTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .tapTimeThreshold) ?? fallback.tapTimeThreshold
+        tapMovementThreshold = try container.decodeIfPresent(CGFloat.self, forKey: .tapMovementThreshold) ?? fallback.tapMovementThreshold
+        rightClickTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .rightClickTimeThreshold) ?? fallback.rightClickTimeThreshold
+        doubleTapTimeWindow = try container.decodeIfPresent(TimeInterval.self, forKey: .doubleTapTimeWindow) ?? fallback.doubleTapTimeWindow
+        minTapDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .minTapDuration) ?? fallback.minTapDuration
+        dragThreshold = try container.decodeIfPresent(CGFloat.self, forKey: .dragThreshold) ?? fallback.dragThreshold
+        quickTapThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .quickTapThreshold) ?? fallback.quickTapThreshold
+        rightClickAreaThreshold = try container.decodeIfPresent(Float.self, forKey: .rightClickAreaThreshold) ?? fallback.rightClickAreaThreshold
+        surfaceMovementThreshold = try container.decodeIfPresent(Float.self, forKey: .surfaceMovementThreshold) ?? fallback.surfaceMovementThreshold
+        surfacePathThreshold = try container.decodeIfPresent(Float.self, forKey: .surfacePathThreshold) ?? fallback.surfacePathThreshold
+        scrollVelocityThreshold = try container.decodeIfPresent(Float.self, forKey: .scrollVelocityThreshold) ?? fallback.scrollVelocityThreshold
+        quickTouchTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .quickTouchTimeThreshold) ?? fallback.quickTouchTimeThreshold
     }
 }
 

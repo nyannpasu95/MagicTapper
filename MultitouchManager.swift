@@ -17,9 +17,20 @@ final class MultitouchManager: @unchecked Sendable {
     private var lastCursorLocation: CGPoint = .zero  // Cache cursor location
     private var touchStartCursorLocation: CGPoint = .zero
 
+    // Scroll-intent tracking. Displacement from the touch-start point can be
+    // fooled by a finger that slides out and back (an aborted scroll or an
+    // unconscious rub), so we additionally accumulate the total surface path
+    // and watch the reported finger velocity — both are strong scroll signals
+    // that a genuine tap never produces.
+    private var lastSurfaceX: Float = 0.0
+    private var lastSurfaceY: Float = 0.0
+    private var surfacePathLength: Float = 0.0
+
     // Configuration-driven thresholds
     private var rightClickThreshold: Float      // X > threshold = right side
     private var surfaceMovementThreshold: Float // 表面移动阈值（用于检测滚动意图）
+    private var surfacePathThreshold: Float     // 累积路程阈值（归一化，超出即判定为滑动）
+    private var scrollVelocityThreshold: Float  // 表面速度阈值（归一化单位/秒，超出即判定为滚动）
     private var quickTouchTimeThreshold: TimeInterval // 快速触控时间阈值
 
     // Singleton access guarded by a lock: the C touch callback fires on an
@@ -74,6 +85,8 @@ final class MultitouchManager: @unchecked Sendable {
         // Set MultitouchManager-specific thresholds
         self.rightClickThreshold = config.rightClickAreaThreshold
         self.surfaceMovementThreshold = config.surfaceMovementThreshold
+        self.surfacePathThreshold = config.surfacePathThreshold
+        self.scrollVelocityThreshold = config.scrollVelocityThreshold
         self.quickTouchTimeThreshold = config.quickTouchTimeThreshold
 
         MultitouchManager.setSharedInstance(self)
@@ -98,6 +111,8 @@ final class MultitouchManager: @unchecked Sendable {
             // Update MultitouchManager thresholds
             rightClickThreshold = config.rightClickAreaThreshold
             surfaceMovementThreshold = config.surfaceMovementThreshold
+            surfacePathThreshold = config.surfacePathThreshold
+            scrollVelocityThreshold = config.scrollVelocityThreshold
             quickTouchTimeThreshold = config.quickTouchTimeThreshold
         }
 
@@ -280,6 +295,7 @@ final class MultitouchManager: @unchecked Sendable {
                 touchStartTime = 0
                 touchStartCursorLocation = .zero
                 isCancelled = false
+                resetSurfaceTrackingOnTouchQueue()
             }
             return
         }
@@ -298,6 +314,9 @@ final class MultitouchManager: @unchecked Sendable {
                     touchStartTime = CFAbsoluteTimeGetCurrent()
                     touchStartCursorLocation = cgLocation
                     isCancelled = false
+                    lastSurfaceX = touchStartX
+                    lastSurfaceY = touchStartY
+                    surfacePathLength = 0.0
 
                     let isRightSide = touchStartX > rightClickThreshold
                     _ = tapDetector.touchBegan(at: cgLocation, isRightSide: isRightSide)
@@ -307,8 +326,34 @@ final class MultitouchManager: @unchecked Sendable {
 
                     // 仅在非拖拽状态下检查表面移动（拖拽时手指滑动是正常的）
                     if !isDraggingActive {
-                        let deltaX = abs(touch.normalized.position.x - touchStartX)
-                        let deltaY = abs(touch.normalized.position.y - touchStartY)
+                        let positionX = touch.normalized.position.x
+                        let positionY = touch.normalized.position.y
+
+                        // 累积路程 + 速度：滚动意图的两个硬信号。
+                        // 位移检测可以被"滑出去又滑回来"绕过，路程和速度不会。
+                        surfacePathLength += hypotf(positionX - lastSurfaceX, positionY - lastSurfaceY)
+                        lastSurfaceX = positionX
+                        lastSurfaceY = positionY
+                        let surfaceSpeed = hypotf(touch.normalized.velocity.x, touch.normalized.velocity.y)
+
+                        if surfaceSpeed > scrollVelocityThreshold {
+                            #if DEBUG
+                            print("🚫 Scroll velocity detected: \(String(format: "%.3f", surfaceSpeed)) > \(String(format: "%.3f", scrollVelocityThreshold))")
+                            #endif
+                            cancelActiveTouchAsScrollOnTouchQueue()
+                            return
+                        }
+
+                        if surfacePathLength > surfacePathThreshold {
+                            #if DEBUG
+                            print("🚫 Surface path exceeded: \(String(format: "%.3f", surfacePathLength)) > \(String(format: "%.3f", surfacePathThreshold))")
+                            #endif
+                            cancelActiveTouchAsScrollOnTouchQueue()
+                            return
+                        }
+
+                        let deltaX = abs(positionX - touchStartX)
+                        let deltaY = abs(positionY - touchStartY)
                         let surfaceMovement = max(deltaX, deltaY)
 
                         // 智能表面移动检测：
@@ -323,8 +368,7 @@ final class MultitouchManager: @unchecked Sendable {
                             #if DEBUG
                             print("🚫 Surface movement detected: \(String(format: "%.3f", surfaceMovement)) > \(String(format: "%.3f", effectiveThreshold)) (quick: \(isQuickTouch))")
                             #endif
-                            tapDetector.reset()
-                            isCancelled = true  // 标记为已取消，防止抬起时触发点击
+                            cancelActiveTouchAsScrollOnTouchQueue()
                             return
                         }
 
@@ -372,6 +416,7 @@ final class MultitouchManager: @unchecked Sendable {
                 touchStartTime = 0
                 touchStartCursorLocation = .zero
                 isCancelled = false
+                resetSurfaceTrackingOnTouchQueue()
             }
         }
     }
@@ -453,6 +498,21 @@ final class MultitouchManager: @unchecked Sendable {
         touchStartCursorLocation = .zero
         isCancelled = false
         isDraggingActive = false
+        resetSurfaceTrackingOnTouchQueue()
+    }
+
+    /// Marks the in-flight touch as a scroll/slide so lifting the finger
+    /// cannot synthesize a click. The touch itself keeps being tracked so the
+    /// same finger cannot restart a gesture mid-contact.
+    private func cancelActiveTouchAsScrollOnTouchQueue() {
+        tapDetector.reset()
+        isCancelled = true
+    }
+
+    private func resetSurfaceTrackingOnTouchQueue() {
+        lastSurfaceX = 0.0
+        lastSurfaceY = 0.0
+        surfacePathLength = 0.0
     }
 
     deinit {
