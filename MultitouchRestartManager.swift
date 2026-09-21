@@ -7,7 +7,7 @@ import Foundation
 /// a fake controller and no AppKit/Cocoa dependency.
 @MainActor
 protocol MultitouchController: AnyObject {
-    /// Whether the app's tap-to-click feature is currently enabled.
+    /// Whether either touch feature is enabled and the system is awake.
     var isAppEnabled: Bool { get }
 
     /// Current number of active multitouch devices.

@@ -1,6 +1,11 @@
 #!/bin/bash
 
-# Debug runner script - runs the app in terminal with console output
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# Build before stopping any running instance; never reuse an old debug bundle.
+bash "$SCRIPT_DIR/build-debug.sh"
 
 echo "=========================================="
 echo "MagicTapper 调试运行器"
@@ -20,21 +25,23 @@ echo ""
 echo "=========================================="
 echo ""
 
-# 确保停止所有正在运行的实例
-killall MagicTapper 2>/dev/null
-killall MagicTapper_Debug 2>/dev/null
-
-sleep 1
-
-# 检查是否有调试版本
-if [ ! -f "build/MagicTapper_Debug.app/Contents/MacOS/MagicTapper_Debug" ]; then
-    echo "❌ 未找到调试版本，正在构建..."
-    bash build-debug.sh
-    echo ""
-fi
+# Stop both variants, and refuse to overlap with a process that won't exit.
+for name in MagicTapper MagicTapper_Debug; do
+    if pgrep -x "$name" >/dev/null; then
+        killall "$name"
+        for ((attempt=0; attempt<20; attempt++)); do
+            if ! pgrep -x "$name" >/dev/null; then break; fi
+            sleep 0.1
+        done
+        if pgrep -x "$name" >/dev/null; then
+            echo "无法退出 ${name}，请从菜单退出后重试。"
+            exit 1
+        fi
+    fi
+done
 
 echo "🚀 启动调试版本..."
 echo ""
 
 # 运行调试版本
-build/MagicTapper_Debug.app/Contents/MacOS/MagicTapper_Debug
+exec "$SCRIPT_DIR/build/MagicTapper_Debug.app/Contents/MacOS/MagicTapper_Debug"

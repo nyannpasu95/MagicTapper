@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Build script for MagicTapper app (Production)
 
@@ -59,6 +61,12 @@ compile_arch() {
     TapConfiguration.swift \
     TapDetector.swift \
     EventSynthesizer.swift \
+    ZoomGestureDetector.swift \
+    ZoomEventSynthesizer.swift \
+    ZoomDiagnostics.swift \
+    ZoomCoordinator.swift \
+    ZoomScrollFilter.swift \
+    ZoomDiagnosticWindow.swift \
     MouseSpeedManager.swift \
     MouseSpeedIOKitBackend.swift \
     PointerSpeedMenuView.swift \
@@ -112,11 +120,12 @@ echo ""
 echo "App location: $APP_PATH"
 echo "Architectures: arm64 (Apple Silicon) + x86_64 (Intel)"
 echo ""
-echo "New Features in v1.1:"
+echo "Features:"
 echo "  • Advanced gesture recognition with state machine"
 echo "  • Right-click detection (hold >0.1s)"
 echo "  • Double-click and movement-activated drag and drop support"
 echo "  • Pointer speed slider"
+echo "  • Independent two-finger zoom (experimental, off by default)"
 echo "  • Launch at Login functionality"
 echo "  • Enhanced menu bar with status display"
 echo ""

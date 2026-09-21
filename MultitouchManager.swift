@@ -7,7 +7,11 @@ import IOKit
 final class MultitouchManager: @unchecked Sendable {
     private var devices: [MTDeviceRef] = []
     private var tapDetector: TapDetector
-    private var isEnabled = true
+    private var isEnabled = true // Tap-to-click only; zoom is independent.
+    private let zoomCoordinator: ZoomCoordinator
+    private var tapDevice: Int32?
+    private var consumedDevices = Set<Int32>()
+    private var touchGeneration: UInt = 0
     private var activeTouch: Int32 = -1
     private var touchStartX: Float = 0.0
     private var touchStartY: Float = 0.0
@@ -75,7 +79,8 @@ final class MultitouchManager: @unchecked Sendable {
     var onDragEnded: ((CGPoint) -> Void)?
 
     @MainActor
-    init() {
+    init(zoomCoordinator: ZoomCoordinator) {
+        self.zoomCoordinator = zoomCoordinator
         // Load configuration
         let config = ConfigurationManager.shared.current
 
@@ -105,6 +110,7 @@ final class MultitouchManager: @unchecked Sendable {
         guard let config = notification.userInfo?["configuration"] as? TapConfiguration else { return }
 
         performOnTouchQueue {
+            zoomCoordinator.cancel()
             // Update TapDetector
             tapDetector.updateConfiguration(config)
 
@@ -178,6 +184,10 @@ final class MultitouchManager: @unchecked Sendable {
             // Mark stopped first so any in-flight callback bails out before
             // touching the (soon-to-be-released) device pointer.
             isStopped = true
+            touchGeneration &+= 1
+            zoomCoordinator.cancel(forgetContacts: true)
+            tapDevice = nil
+            consumedDevices.removeAll()
             cancelActiveGestureOnTouchQueue()
 
             for device in devices {
@@ -240,14 +250,48 @@ final class MultitouchManager: @unchecked Sendable {
     /// The touches pointer is only valid for the duration of the callback, so
     /// the caller must have already copied it into `touches`. We dispatch
     /// async to `touchQueue` so the framework thread is never blocked.
-    func enqueueTouches(_ touches: [MTTouch], timestamp: Double) {
+    func enqueueTouches(_ touches: [MTTouch], device: Int32, timestamp: Double,
+                        generation: UInt, zoomGeneration: UInt) {
         touchQueue.async { [weak self] in
-            self?.processTouchesOnTouchQueue(touches, numTouches: touches.count, timestamp: timestamp)
+            guard let self, !self.isStopped, self.touchGeneration == generation else { return }
+            self.processTouchesOnTouchQueue(touches, device: device, timestamp: timestamp,
+                                            zoomGeneration: zoomGeneration)
         }
     }
 
-    private func processTouchesOnTouchQueue(_ touches: [MTTouch], numTouches: Int, timestamp: Double) {
+    // Read only under callbackLock, like the C buffer lifetime and stopped flag.
+    fileprivate var callbackGeneration: UInt { touchGeneration }
+    fileprivate var zoomGeneration: UInt { zoomCoordinator.currentGeneration }
+
+    private func processTouchesOnTouchQueue(_ touches: [MTTouch], device: Int32,
+                                            timestamp: Double, zoomGeneration: UInt) {
+        // State 4 is touching; 7 is lingering/leaving and must not sustain zoom.
+        // Keep the original frame for tap handling, preserving its existing ABI assumptions.
+        let zoomTouches = touches.filter { $0.state == 4 }.map {
+            ZoomTouch(id: $0.identifier, x: Double($0.normalized.position.x),
+                      y: Double($0.normalized.position.y))
+        }
+        ZoomDiagnostics.log("touch device=\(device) timestamp=\(timestamp) contacts=\(touches.map { "\($0.identifier):\($0.state):(\($0.normalized.position.x),\($0.normalized.position.y))" })")
+        let target = zoomCoordinator.isEnabled && (zoomTouches.count == 2 || zoomCoordinator.needsTargetCheck)
+            ? ZoomScrollFilter.currentTarget() : nil
+        let zoomOwns = zoomCoordinator.process(device: device, touches: zoomTouches, timestamp: timestamp,
+                                              dragging: isDraggingActive, generation: zoomGeneration,
+                                              target: target, contactCount: touches.count)
+        let numTouches = touches.count
+        if numTouches > 1 || zoomOwns { consumedDevices.insert(device) }
+        if consumedDevices.contains(device) {
+            // Do not let a second device end another device's gesture.
+            if tapDevice == nil || tapDevice == device {
+                cancelActiveGestureOnTouchQueue()
+                tapDevice = nil
+            }
+            if numTouches == 0 { consumedDevices.remove(device) }
+            return
+        }
         guard isEnabled else { return }
+        if let tapDevice, tapDevice != device { return }
+        if numTouches > 0 { tapDevice = device }
+        defer { if numTouches == 0 { tapDevice = nil } }
 
         // Only fetch cursor position when needed (touch start, end, or drag)
         // For touch move without drag, we can skip this expensive call
@@ -399,25 +443,6 @@ final class MultitouchManager: @unchecked Sendable {
                     }
                 }
             }
-        } else if numTouches > 1 {
-            // Multiple touches - cancel current gesture (no cursor needed)
-            // Reset even when no single touch is active so a previous click cannot
-            // survive a multi-touch gesture as a stale double-click candidate.
-            tapDetector.reset()
-            if activeTouch != -1 {
-                if isDraggingActive {
-                    let cgLocation = getCursorLocation()
-                    onDragEnded?(cgLocation)
-                    isDraggingActive = false
-                }
-                activeTouch = -1
-                touchStartX = 0.0
-                touchStartY = 0.0
-                touchStartTime = 0
-                touchStartCursorLocation = .zero
-                isCancelled = false
-                resetSurfaceTrackingOnTouchQueue()
-            }
         }
     }
 
@@ -531,7 +556,8 @@ final class MultitouchManager: @unchecked Sendable {
 }
 
 private func touchCallback(device: Int32, touches: UnsafeMutablePointer<MTTouch>?, numTouches: Int32, timestamp: Double, frame: Int32) -> Int32 {
-    guard let manager = MultitouchManager.sharedInstance, let touches = touches else {
+    guard let manager = MultitouchManager.sharedInstance, numTouches >= 0,
+          numTouches == 0 || touches != nil else {
         return 0
     }
 
@@ -547,8 +573,11 @@ private func touchCallback(device: Int32, touches: UnsafeMutablePointer<MTTouch>
         return 0
     }
     buffer = count > 0 ? Array(UnsafeBufferPointer(start: touches, count: count)) : []
+    let generation = manager.callbackGeneration
+    let zoomGeneration = manager.zoomGeneration
     manager.callbackLock.unlock()
 
-    manager.enqueueTouches(buffer, timestamp: timestamp)
+    manager.enqueueTouches(buffer, device: device, timestamp: timestamp,
+                           generation: generation, zoomGeneration: zoomGeneration)
     return 0
 }

@@ -1,159 +1,89 @@
 #!/bin/bash
-
-# MagicTapper v1.1 测试和安装脚本
-
-set -e  # 遇到错误立即退出
-
-APP_NAME="MagicTapper"
-BUILD_PATH="build/MagicTapper.app"
+# Build current source, test the exact bundle, then optionally install it.
+set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+APP_PATH="$SCRIPT_DIR/build/MagicTapper.app"
 INSTALL_PATH="/Applications/MagicTapper.app"
+MODE="${1:-interactive}"
+case "$MODE" in
+    interactive|--build-only|--test-only|--install-only) ;;
+    *) echo "Usage: bash test-and-install.sh [--build-only|--test-only|--install-only]"; exit 2 ;;
+esac
 
-echo "=========================================="
-echo "MagicTapper v1.1 测试和安装向导"
-echo "=========================================="
-echo ""
+stop_instances() {
+    local name attempt
+    for name in MagicTapper MagicTapper_Debug; do
+        if pgrep -x "$name" >/dev/null; then
+            echo "正在退出 $name..."
+            killall "$name"
+            for ((attempt=0; attempt<20; attempt++)); do
+                if ! pgrep -x "$name" >/dev/null; then break; fi
+                sleep 0.1
+            done
+            if pgrep -x "$name" >/dev/null; then
+                echo "无法退出 ${name}，请从菜单退出后重试。"
+                exit 1
+            fi
+        fi
+    done
+}
 
-# 步骤1：卸载旧版本
-echo "【步骤 1/5】检查并卸载旧版本..."
-if pgrep -x "$APP_NAME" > /dev/null; then
-    echo "  → 正在退出旧版本..."
-    killall "$APP_NAME" 2>/dev/null || true
-    sleep 2
-fi
+confirm() {
+    local answer
+    read -r -p "$1 (y/N): " answer || return 1
+    [[ "$answer" == y || "$answer" == Y ]]
+}
 
-if [ -d "$INSTALL_PATH" ]; then
-    echo "  → 正在删除旧版本..."
-    rm -rf "$INSTALL_PATH"
-    echo "  ✓ 旧版本已删除"
-else
-    echo "  ✓ 未检测到已安装的版本"
-fi
-echo ""
+# Never trust an existing bundle: build scripts include every current source.
+# A compile/signature failure exits before stopping or replacing the installed app.
+echo "正在从当前源码构建最新版本..."
+bash "$SCRIPT_DIR/build.sh"
+codesign --verify --deep --strict "$APP_PATH"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PATH/Contents/Info.plist")
+DIGEST=$(shasum -a 256 "$APP_PATH/Contents/MacOS/MagicTapper" | awk '{print $1}')
+echo "版本: $VERSION"
+echo "本次构建: $APP_PATH"
+echo "二进制 SHA-256: $DIGEST"
+if [[ "$MODE" == --build-only ]]; then exit 0; fi
 
-# 步骤2：验证构建
-echo "【步骤 2/5】验证构建文件..."
-if [ ! -d "$BUILD_PATH" ]; then
-    echo "  ✗ 错误：未找到构建文件"
-    echo "  请先运行: bash build.sh"
-    exit 1
-fi
-
-VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$BUILD_PATH/Contents/Info.plist" 2>/dev/null || echo "unknown")
-MIN_OS=$(/usr/libexec/PlistBuddy -c "Print LSMinimumSystemVersion" "$BUILD_PATH/Contents/Info.plist" 2>/dev/null || echo "unknown")
-
-echo "  应用版本: $VERSION"
-echo "  最低系统版本: macOS $MIN_OS"
-echo "  ✓ 构建文件验证成功"
-echo ""
-
-# 步骤3：测试运行
-echo "【步骤 3/5】启动测试版本..."
-echo ""
-echo "  正在打开 $BUILD_PATH"
-echo ""
-open "$BUILD_PATH"
-
-echo "=========================================="
-echo "请进行以下测试："
-echo "=========================================="
-echo ""
-echo "✓ 基础测试"
-echo "  1. 检查菜单栏是否显示鼠标图标"
-echo "  2. 点击菜单栏图标，检查菜单内容"
-echo "  3. 确认状态显示为 'Status: Running'"
-echo ""
-echo "✓ 点击测试（在 Magic Mouse 上）"
-echo "  4. 左键点击：在鼠标左侧轻触"
-echo "  5. 右键点击：在鼠标右侧按住 >0.1秒"
-echo ""
-echo "✓ 拖拽测试"
-echo "  6. 拖拽文件：快速点击两次，第二次按住不放并移动"
-echo "  7. 拖拽窗口：在窗口标题栏双击并按住移动"
-echo ""
-echo "✓ 功能测试"
-echo "  8. 切换 'Tap to Click' 开关"
-echo "  9. 拖动 'Pointer Speed' 滑块，确认鼠标速度实时变化"
-echo " 10. 点击 'Restore Default'，确认鼠标速度恢复"
-echo " 11. 查看 'About MagicTapper' 信息"
-echo " 12. 测试 'Launch at Login' 功能"
-echo ""
-echo "=========================================="
-echo ""
-
-# 等待用户确认
-read -p "测试完成后，是否安装到 /Applications? (y/n): " -n 1 -r
-echo ""
-
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "安装已取消。"
-    echo ""
-    echo "如需手动测试，运行："
-    echo "  open $BUILD_PATH"
-    echo ""
-    echo "如需手动安装，运行："
-    echo "  cp -r $BUILD_PATH /Applications/"
-    echo ""
-    exit 0
-fi
-
-echo ""
-
-# 步骤4：退出测试版本
-echo "【步骤 4/5】退出测试版本..."
-if pgrep -x "$APP_NAME" > /dev/null; then
-    killall "$APP_NAME" 2>/dev/null || true
-    sleep 2
-    echo "  ✓ 测试版本已退出"
-else
-    echo "  ✓ 测试版本未在运行"
-fi
-echo ""
-
-# 步骤5：安装
-echo "【步骤 5/5】安装到 /Applications..."
-cp -r "$BUILD_PATH" "$INSTALL_PATH"
-
-# 验证安装
-if [ -d "$INSTALL_PATH" ]; then
-    echo "  ✓ 安装成功！"
-    echo ""
-    echo "=========================================="
-    echo "✅ MagicTapper v$VERSION 已安装"
-    echo "=========================================="
-    echo ""
-    echo "安装路径: $INSTALL_PATH"
-    echo ""
-
-    # 询问是否立即启动
-    read -p "是否立即启动应用？(y/n): " -n 1 -r
-    echo ""
-
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        echo ""
-        echo "正在启动 MagicTapper..."
-        open "$INSTALL_PATH"
-        sleep 2
-        echo ""
-        echo "✓ 应用已启动"
-        echo ""
-        echo "提示："
-        echo "  • 首次运行需要授予无障碍权限"
-        echo "  • 在菜单栏点击鼠标图标可查看选项"
-        echo "  • 如需设置开机自启动，请在菜单中启用 'Launch at Login'"
-    else
-        echo ""
-        echo "你可以随时从以下位置启动应用："
-        echo "  • Launchpad > MagicTapper"
-        echo "  • /Applications/MagicTapper.app"
+if [[ "$MODE" != --install-only ]]; then
+    stop_instances
+    # Force the specified bundle, rather than activating another registered copy.
+    open -n "$APP_PATH"
+    echo "已启动本次构建。请检查菜单栏、轻点、右键、双击拖拽和普通滚动。"
+    echo "缩放测试：开启 Two-Finger Zoom，在 Chrome 和 PDF 中检查放大、缩小及额外滚动。"
+    echo "再关闭 Tap to Click，确认缩放仍可独立使用。"
+    if [[ "$MODE" == --test-only ]]; then exit 0; fi
+    if ! confirm "测试完成后，是否安装到 /Applications"; then
+        echo "未安装；原有安装版本保留，测试版继续运行。"
+        exit 0
     fi
-else
-    echo "  ✗ 安装失败"
-    exit 1
 fi
 
-echo ""
-echo "=========================================="
-echo "安装完成！"
-echo "=========================================="
-echo ""
+# Stage and verify a complete copy before touching the existing installation.
+STAGING=$(mktemp -d "/Applications/.MagicTapper-install.XXXXXX")
+BACKUP_PATH=""
+cleanup() {
+    local status=$?
+    if [[ $status -ne 0 && -n "$BACKUP_PATH" && ! -e "$INSTALL_PATH" ]]; then
+        mv "$BACKUP_PATH" "$INSTALL_PATH" || echo "恢复失败，旧版仍保留在: $BACKUP_PATH" >&2
+    fi
+    rm -rf "$STAGING"
+    return "$status"
+}
+trap cleanup EXIT
+ditto "$APP_PATH" "$STAGING/MagicTapper.app"
+codesign --verify --deep --strict "$STAGING/MagicTapper.app"
+cmp "$APP_PATH/Contents/MacOS/MagicTapper" "$STAGING/MagicTapper.app/Contents/MacOS/MagicTapper"
+stop_instances
+if [[ -e "$INSTALL_PATH" || -L "$INSTALL_PATH" ]]; then
+    BACKUP_PATH="/Applications/MagicTapper_backup_$(date +%Y%m%d_%H%M%S)_$$.app"
+    mv "$INSTALL_PATH" "$BACKUP_PATH"
+fi
+mv "$STAGING/MagicTapper.app" "$INSTALL_PATH"
+echo "已安装本次构建: $INSTALL_PATH"
+if [[ -n "$BACKUP_PATH" ]]; then echo "旧版备份: $BACKUP_PATH"; fi
+if confirm "是否立即启动已安装版本"; then
+    open -n "$INSTALL_PATH"
+fi

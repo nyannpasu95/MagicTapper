@@ -1,5 +1,20 @@
 # MagicTapper 版本更新日志
 
+## Unreleased
+
+- Added a single Chrome startup separation interval after browser recording reproduced 1.54×/0.65× scale jumps; retained pending movement/end events and target cancellation. Physical validation remains in progress.
+- Fixed late momentum events from a previous scroll rejecting a fresh touch sequence; old momentum no longer starts the new two-finger candidate's decision timeout.
+- Reverted paced Chrome output after physical testing showed stutter and failed short gestures; restored immediate continuous increments and added an opt-in native/synthetic gesture trace for investigating the remaining jumps.
+- Unified test/install entry points to always rebuild current source, launch the exact generated bundle, and preserve the installed app until a verified replacement is ready. Added failure/rollback script checks.
+- Fixed the magnification focal point for each gesture so incidental pointer movement cannot move the emitted zoom anchor.
+- Moved scroll arbitration to the annotated-session tail before application delivery, covering scroll events inserted after the previous session-head tap.
+- Added Chrome-specific pinch-threshold preparation for short slides on ordinary pages; other apps retain the original magnification sequence.
+
+- Added experimental two-finger vertical slide to continuous pinch zoom, disabled by default and independent of tap-to-click.
+- Added reversal/sensitivity controls, bounded native-scroll buffering, gesture cancellation and zoom-aware device recovery.
+- Added a debug diagnostic canvas/probe and opt-in touch/scroll logs. Physical calibration and application compatibility remain pending; see TESTING.md.
+
+
 ## [1.2] - 2026-08-14
 
 ### 新增功能 ✨

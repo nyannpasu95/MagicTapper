@@ -12,6 +12,19 @@ English | [中文](README_zh.md) | [日本語](README_ja.md)
 
 MagicTapper brings trackpad-style tap-to-click functionality to the Apple Magic Mouse. Simply tap the left or right side of your mouse surface to click - no more pressing down the button.
 
+## Two-Finger Zoom (experimental)
+
+Enable **Two-Finger Zoom** in the menu bar, then slide both fingers vertically together on the Magic Mouse to send continuous pinch zoom to the app under the pointer. It is off by default and independent of **Tap to Click**.
+
+The intended default is forward to zoom in and backward to zoom out. **Sensitivity Settings…** provides reverse direction and sensitivity (0.5×–2.0×). Both fingers must move vertically; a resting second finger, horizontal motion, or a third finger does not start zoom. Lift all fingers before starting another gesture.
+
+Chrome adds a brief startup interval of approximately 24–34 ms per gesture, retaining movement during that interval and then following touch updates continuously. This adjustment is undergoing physical validation. Use `bash diagnose-zoom.sh` to record local timing if jumps persist.
+
+Safari, Chrome, and Preview images/PDFs are the initial validation targets, not a verified compatibility list. Physical direction calibration and app testing remain pending. Zoom uses undocumented gesture fields; it is not full-screen accessibility zoom and has no keyboard-shortcut fallback. Alternating between mouse and trackpad is supported, but simultaneous scrolling on another device may be intercepted during recognition/zoom.
+
+If the menu reports zoom paused, ordinary scrolling remains available. Check Accessibility access and toggle zoom off/on to retry. See [TESTING.md](TESTING.md#two-finger-zoom-validation) for diagnostics and acceptance checks.
+
+
 ## ✨ Features
 
 - 🖱️ **Tap left side** for left-click
@@ -45,11 +58,13 @@ bash install-final.sh
 ```
 
 The script will:
-- Build the optimized version (if needed)
+- Always rebuild the optimized version from current source
 - Stop any running instances
 - Backup old version (if exists)
 - Install to /Applications
 - Guide you through first launch
+
+Run `bash test-and-install.sh` to rebuild and try the latest source before choosing whether to install. It launches the newly built `build/MagicTapper.app` and preserves the installed copy until installation is confirmed. Use `--build-only` to build without launching, or `--test-only` to launch without installing. `quick-test.sh` and `debug-run.sh` also rebuild before launch.
 
 ### Manual Installation
 

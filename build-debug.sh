@@ -1,5 +1,7 @@
 #!/bin/bash
 set -euo pipefail
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Debug build script for MagicTapper app
 
@@ -64,6 +66,12 @@ echo "📦 Compiling debug version..."
     TapConfiguration.swift \
     TapDetector.swift \
     EventSynthesizer.swift \
+    ZoomGestureDetector.swift \
+    ZoomEventSynthesizer.swift \
+    ZoomDiagnostics.swift \
+    ZoomCoordinator.swift \
+    ZoomScrollFilter.swift \
+    ZoomDiagnosticWindow.swift \
     MouseSpeedManager.swift \
     MouseSpeedIOKitBackend.swift \
     PointerSpeedMenuView.swift \

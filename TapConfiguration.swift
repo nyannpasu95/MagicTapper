@@ -48,6 +48,12 @@ struct TapConfiguration: Codable, Equatable {
     /// Time threshold for quick touch detection (seconds)
     var quickTouchTimeThreshold: TimeInterval
 
+    // MARK: - Two-finger Zoom
+
+    var zoomEnabled: Bool
+    var zoomReversed: Bool
+    var zoomSensitivity: Double
+
     // MARK: - Default Configuration
 
     /// Default configuration with optimized values
@@ -84,7 +90,10 @@ struct TapConfiguration: Codable, Equatable {
         surfaceMovementThreshold: Float = 0.04,
         surfacePathThreshold: Float = 0.10,
         scrollVelocityThreshold: Float = 1.0,
-        quickTouchTimeThreshold: TimeInterval = 0.15
+        quickTouchTimeThreshold: TimeInterval = 0.15,
+        zoomEnabled: Bool = false,
+        zoomReversed: Bool = false,
+        zoomSensitivity: Double = 1
     ) {
         self.tapTimeThreshold = tapTimeThreshold
         self.tapMovementThreshold = tapMovementThreshold
@@ -98,6 +107,9 @@ struct TapConfiguration: Codable, Equatable {
         self.surfacePathThreshold = surfacePathThreshold
         self.scrollVelocityThreshold = scrollVelocityThreshold
         self.quickTouchTimeThreshold = quickTouchTimeThreshold
+        self.zoomEnabled = zoomEnabled
+        self.zoomReversed = zoomReversed
+        self.zoomSensitivity = zoomSensitivity.isFinite ? min(2, max(0.5, zoomSensitivity)) : 1
     }
 
     /// Tolerant decoding: configurations persisted by older app versions lack
@@ -119,6 +131,10 @@ struct TapConfiguration: Codable, Equatable {
         surfacePathThreshold = try container.decodeIfPresent(Float.self, forKey: .surfacePathThreshold) ?? fallback.surfacePathThreshold
         scrollVelocityThreshold = try container.decodeIfPresent(Float.self, forKey: .scrollVelocityThreshold) ?? fallback.scrollVelocityThreshold
         quickTouchTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .quickTouchTimeThreshold) ?? fallback.quickTouchTimeThreshold
+        zoomEnabled = try container.decodeIfPresent(Bool.self, forKey: .zoomEnabled) ?? false
+        zoomReversed = try container.decodeIfPresent(Bool.self, forKey: .zoomReversed) ?? false
+        let sensitivity = try container.decodeIfPresent(Double.self, forKey: .zoomSensitivity) ?? 1
+        zoomSensitivity = sensitivity.isFinite ? min(2, max(0.5, sensitivity)) : 1
     }
 }
 

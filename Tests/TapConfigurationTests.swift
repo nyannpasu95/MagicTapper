@@ -49,16 +49,29 @@ class TapConfigurationTests: XCTestCase {
         XCTAssertEqual(decoded.rightClickAreaThreshold, 0.65, accuracy: 0.0001)
         XCTAssertEqual(decoded.surfacePathThreshold, TapConfiguration.default.surfacePathThreshold, accuracy: 0.0001)
         XCTAssertEqual(decoded.scrollVelocityThreshold, TapConfiguration.default.scrollVelocityThreshold, accuracy: 0.0001)
+        XCTAssertFalse(decoded.zoomEnabled)
+        XCTAssertFalse(decoded.zoomReversed)
+        XCTAssertEqual(decoded.zoomSensitivity, 1)
     }
 
     func testRoundTripPreservesAllValues() throws {
         var config = TapConfiguration.default
         config.surfacePathThreshold = 0.18
         config.scrollVelocityThreshold = 1.7
+        config.zoomEnabled = true
+        config.zoomReversed = true
+        config.zoomSensitivity = 1.6
 
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(TapConfiguration.self, from: data)
 
         XCTAssertEqual(decoded, config)
+    }
+
+    func testZoomSensitivityIsBoundedWhenLoadingSettings() throws {
+        for (input, expected) in [(-10.0, 0.5), (100.0, 2.0)] {
+            let data = Data("{\"zoomSensitivity\":\(input)}".utf8)
+            XCTAssertEqual(try JSONDecoder().decode(TapConfiguration.self, from: data).zoomSensitivity, expected)
+        }
     }
 }

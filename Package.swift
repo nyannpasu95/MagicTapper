@@ -20,6 +20,8 @@ let package = Package(
             exclude: [
                 "AppIcon.icns",
                 "AppDelegate.swift",
+                "ZoomScrollFilter.swift",
+                "ZoomDiagnosticWindow.swift",
                 "CHANGELOG.md",
                 "DEBUG_GUIDE.md",
                 "Info.plist",
@@ -38,6 +40,7 @@ let package = Package(
                 "build-debug.sh",
                 "build.sh",
                 "debug-run.sh",
+                "diagnose-zoom.sh",
                 "install-final.sh",
                 "main.swift",
                 "magictapper-dark.png",
@@ -53,6 +56,11 @@ let package = Package(
             sources: [
                 "Constants.swift",
                 "EventSynthesizer.swift",
+                "ZoomGestureDetector.swift",
+                "ZoomEventSynthesizer.swift",
+                "ZoomDiagnostics.swift",
+                "ZoomCoordinator.swift",
+
                 "MouseSpeedManager.swift",
                 "MultitouchDeviceMonitor.swift",
                 "MultitouchRestartManager.swift",
@@ -64,7 +72,8 @@ let package = Package(
         .testTarget(
             name: "MagicTapperTests",
             dependencies: ["MagicTapperLib"],
-            path: "Tests"
+            path: "Tests",
+            exclude: ["ScriptWorkflowTests.py"]
         )
     ]
 )

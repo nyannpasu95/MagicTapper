@@ -20,6 +20,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Posts tap/drag mouse events directly from the multitouch queue
     private let eventSynthesizer = EventSynthesizer()
+    private let zoomFilter = ZoomScrollFilter()
+    private var zoomDiagnosticWindow: ZoomDiagnosticWindow?
+    private var systemSleeping = false
+    private var wantsTouchService: Bool { isEnabled || ConfigurationManager.shared.current.zoomEnabled }
 
     // Event-driven Magic Mouse connect/disconnect detection via IOKit
     // notifications; reacts immediately instead of waiting for health-check polls
@@ -37,6 +41,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var preventSleepEnabled = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        zoomFilter.onFailure = { [weak self] in self?.updateMenu() }
+        NotificationCenter.default.addObserver(self, selector: #selector(zoomConfigurationChanged),
+            name: ConfigurationManager.configurationDidChangeNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(frontmostApplicationChanged),
+            name: NSWorkspace.didActivateApplicationNotification, object: nil)
         prepareMouseSpeed()
         setupMenuBar()
         registerForSleepWakeNotifications()
@@ -52,7 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hasShownAccessibilityInstructions = true
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
-        alert.informativeText = "\(Constants.App.name) needs accessibility permissions to simulate clicks.\n\nPlease grant permission in:\nSystem Settings > Privacy & Security > Accessibility\n\nAfter enabling, return to \(Constants.App.name). The app will begin working as soon as permission is granted."
+        alert.informativeText = "\(Constants.App.name) needs accessibility permissions to simulate clicks and pinch zoom.\n\nPlease grant permission in:\nSystem Settings > Privacy & Security > Accessibility\n\nAfter enabling, return to \(Constants.App.name). The app will begin working as soon as permission is granted."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Quit")
@@ -72,6 +81,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         deviceMonitor?.stop()
         cancelActiveDrag()
         multitouchManager?.stop()
+        zoomFilter.stop()
+        NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         disableSleepPrevention()
         unregisterForSleepWakeNotifications()
     }
@@ -127,6 +139,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("💤 System going to sleep - stopping multitouch manager")
         #endif
 
+        systemSleeping = true
+        zoomFilter.stop()
         lastSleepTime = Date()
         restartManager?.stopHealthCheck()
         restartManager?.cancelPendingRestart()
@@ -140,8 +154,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         print("👀 System woke up - scheduling restart")
         #endif
 
-        guard isEnabled else { return }
+        systemSleeping = false
+        guard wantsTouchService else { return }
 
+        zoomFilter.configure(ConfigurationManager.shared.current)
         isRecoveringFromSleep = true
 
         // Calculate sleep duration to determine recovery strategy
@@ -171,7 +187,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // If we're not recovering from sleep, this might be just a screen lock
         // Still check if devices are valid
-        guard isEnabled, !isRecoveringFromSleep else { return }
+        guard wantsTouchService, !isRecoveringFromSleep else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + Constants.Timing.screenUnlockCheckDelay) { [weak self] in
             guard let self = self else { return }
@@ -276,6 +292,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Device Monitor
 
     private func startDeviceMonitor() {
+        deviceMonitor?.stop()
         deviceMonitor = MultitouchDeviceMonitor()
         deviceMonitor?.onEvent = { [weak self] event in
             DispatchQueue.main.async {
@@ -286,7 +303,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleDeviceMonitorEvent(_ event: MultitouchDeviceMonitor.Event) {
-        guard isEnabled else { return }
+        guard wantsTouchService else { return }
 
         switch event {
         case .connected:
@@ -321,7 +338,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Status indicator
         let deviceCount = multitouchManager?.getDeviceCount() ?? 0
         let statusText: String
-        if !isEnabled {
+        if !wantsTouchService {
             statusText = "Status: Disabled"
         } else if deviceCount > 0 {
             statusText = "Status: Running (\(deviceCount) Magic Mouse)"
@@ -335,10 +352,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // Enable/Disable toggle
-        let enabledItem = NSMenuItem(title: "Tap to Click: Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
+        let enabledItem = NSMenuItem(title: "Tap to Click", action: #selector(toggleEnabled), keyEquivalent: "")
         enabledItem.state = isEnabled ? .on : .off
         enabledItem.target = self
         menu.addItem(enabledItem)
+
+        let zoomItem = NSMenuItem(title: "Two-Finger Zoom", action: #selector(toggleZoom), keyEquivalent: "")
+        zoomItem.state = ConfigurationManager.shared.current.zoomEnabled ? .on : .off
+        zoomItem.target = self
+        menu.addItem(zoomItem)
+        if let failure = zoomFilter.failure {
+            let item = NSMenuItem(title: failure, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            menu.addItem(item)
+        }
+        #if DEBUG
+        let diagnosticItem = NSMenuItem(title: "Zoom Diagnostics…", action: #selector(showZoomDiagnostics), keyEquivalent: "")
+        diagnosticItem.target = self
+        menu.addItem(diagnosticItem)
+        #endif
 
         menu.addItem(NSMenuItem.separator())
 
@@ -446,8 +478,45 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if !isEnabled {
             cancelActiveDrag()
         }
-        multitouchManager?.setEnabled(isEnabled)
+        applyFeatureConfiguration()
         updateMenu()
+    }
+
+    @objc private func toggleZoom() {
+        ConfigurationManager.shared.update(\.zoomEnabled, to: !ConfigurationManager.shared.current.zoomEnabled)
+    }
+
+    @objc private func zoomConfigurationChanged() {
+        applyFeatureConfiguration()
+        updateMenu()
+    }
+
+    @objc private func frontmostApplicationChanged() {
+        zoomFilter.coordinator.cancel()
+    }
+
+    @objc private func showZoomDiagnostics() {
+        if zoomDiagnosticWindow == nil { zoomDiagnosticWindow = ZoomDiagnosticWindow() }
+        zoomDiagnosticWindow?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func applyFeatureConfiguration() {
+        guard !systemSleeping, hasStartedMultitouch else { return }
+        zoomFilter.configure(ConfigurationManager.shared.current)
+        multitouchManager?.setEnabled(isEnabled)
+        if wantsTouchService {
+            if multitouchManager?.getDeviceCount() == 0 {
+                restartManager?.restart(reason: .manual)
+            }
+            startDeviceMonitor()
+            restartManager?.startHealthCheck()
+        } else {
+            restartManager?.cancelPendingRestart()
+            restartManager?.stopHealthCheck()
+            deviceMonitor?.stop()
+            multitouchManager?.stop()
+        }
     }
 
     @objc func toggleLaunchAtLogin() {
@@ -530,8 +599,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupRestartManager()
 
         // Create and start multitouch manager
-        multitouchManager = MultitouchManager()
+        zoomFilter.configure(ConfigurationManager.shared.current)
+        multitouchManager = MultitouchManager(zoomCoordinator: zoomFilter.coordinator)
+        multitouchManager?.setEnabled(isEnabled)
         setupMultitouchCallbacks()
+        guard wantsTouchService else { updateMenu(); return }
         let deviceCount = multitouchManager?.start() ?? 0
         startDeviceMonitor()
         updateMenu()
@@ -648,7 +720,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - MultitouchController
 
 extension AppDelegate: MultitouchController {
-    var isAppEnabled: Bool { isEnabled }
+    var isAppEnabled: Bool { wantsTouchService && !systemSleeping }
 
     var currentDeviceCount: Int {
         multitouchManager?.getDeviceCount() ?? 0
@@ -663,9 +735,12 @@ extension AppDelegate: MultitouchController {
     /// into AppDelegate internals.
     @discardableResult
     func stopAndRecreateMultitouch() -> Int {
+        guard wantsTouchService, !systemSleeping else { return 0 }
         cancelActiveDrag()
         multitouchManager?.stop()
-        multitouchManager = MultitouchManager()
+        zoomFilter.configure(ConfigurationManager.shared.current)
+        multitouchManager = MultitouchManager(zoomCoordinator: zoomFilter.coordinator)
+        multitouchManager?.setEnabled(isEnabled)
         setupMultitouchCallbacks()
         return multitouchManager?.start() ?? 0
     }

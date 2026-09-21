@@ -104,6 +104,11 @@ final class SettingsWindowController: NSWindowController {
         ),
     ]
 
+    private let zoomEnabledButton = NSButton(checkboxWithTitle: "Enable Two-Finger Zoom", target: nil, action: nil)
+    private let zoomReversedButton = NSButton(checkboxWithTitle: "Reverse zoom direction", target: nil, action: nil)
+    private let zoomSlider = NSSlider(value: 1, minValue: 0.5, maxValue: 2, target: nil, action: nil)
+    private let zoomValue = NSTextField(labelWithString: "1.00×")
+
     private var sliders: [NSSlider] = []
     private var valueLabels: [NSTextField] = []
     private var pendingCommit: DispatchWorkItem?
@@ -123,6 +128,8 @@ final class SettingsWindowController: NSWindowController {
 
         buildContent(in: contentViewController.view)
         reloadFromConfiguration()
+        NotificationCenter.default.addObserver(self, selector: #selector(configurationChanged),
+            name: ConfigurationManager.configurationDidChangeNotification, object: nil)
     }
 
     required init?(coder: NSCoder) {
@@ -131,6 +138,7 @@ final class SettingsWindowController: NSWindowController {
 
     deinit {
         pendingCommit?.cancel()
+        NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: - UI Construction
@@ -181,7 +189,23 @@ final class SettingsWindowController: NSWindowController {
         let resetButton = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetToDefaults(_:)))
         resetButton.bezelStyle = .rounded
 
-        let stackView = NSStackView(views: [headerLabel, grid, footnoteLabel, resetButton])
+        zoomEnabledButton.target = self
+        zoomEnabledButton.action = #selector(zoomSettingsChanged)
+        zoomReversedButton.target = self
+        zoomReversedButton.action = #selector(zoomSettingsChanged)
+        zoomSlider.target = self
+        zoomSlider.action = #selector(zoomSettingsChanged)
+        zoomSlider.isContinuous = false
+        let zoomRow = NSStackView(views: [NSTextField(labelWithString: "Zoom sensitivity"), zoomSlider, zoomValue])
+        zoomRow.orientation = .horizontal
+        zoomSlider.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        let zoomHelp = NSTextField(wrappingLabelWithString: "Slide both fingers toward the front to zoom in. Lift both fingers before starting again. Works in apps that support pinch zoom.")
+        zoomHelp.preferredMaxLayoutWidth = 420
+        zoomHelp.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
+        zoomHelp.font = NSFont.systemFont(ofSize: 11)
+        zoomHelp.textColor = .secondaryLabelColor
+        let stackView = NSStackView(views: [headerLabel, grid, footnoteLabel,
+            zoomEnabledButton, zoomReversedButton, zoomRow, zoomHelp, resetButton])
         stackView.orientation = .vertical
         stackView.alignment = .leading
         stackView.spacing = 14
@@ -200,6 +224,27 @@ final class SettingsWindowController: NSWindowController {
     }
 
     // MARK: - Actions
+
+    @objc private func configurationChanged() {
+        // Menu toggles must update this window, without overwriting an uncommitted tap slider.
+        reloadZoomSettings()
+    }
+
+    @objc private func zoomSettingsChanged() {
+        var config = ConfigurationManager.shared.current
+        config.zoomEnabled = zoomEnabledButton.state == .on
+        config.zoomReversed = zoomReversedButton.state == .on
+        config.zoomSensitivity = zoomSlider.doubleValue
+        ConfigurationManager.shared.update(config)
+    }
+
+    private func reloadZoomSettings() {
+        let config = ConfigurationManager.shared.current
+        zoomEnabledButton.state = config.zoomEnabled ? .on : .off
+        zoomReversedButton.state = config.zoomReversed ? .on : .off
+        zoomSlider.doubleValue = config.zoomSensitivity
+        zoomValue.stringValue = String(format: "%.2f×", config.zoomSensitivity)
+    }
 
     @objc private func sliderChanged(_ sender: NSSlider) {
         let index = sender.tag
@@ -231,6 +276,7 @@ final class SettingsWindowController: NSWindowController {
     // MARK: - Refresh
 
     private func reloadFromConfiguration() {
+        reloadZoomSettings()
         let config = ConfigurationManager.shared.current
         for (index, spec) in specs.enumerated() {
             let value = spec.read(config)
