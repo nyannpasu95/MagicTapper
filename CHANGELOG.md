@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fixed unreliable right-clicks. Holds longer than the 0.35s tap limit were silently dropped, so a slower, more deliberate press failed; right-side holds now count up to **Right-Click Max Hold** (default 0.8s, adjustable in Sensitivity Settings).
+- Right-click holds keep the quick-tap cursor allowance (2× Movement Tolerance): pressing and holding rocks the mouse slightly, which high pointer speeds amplify past the stricter slow-tap limit.
+- Taps now count only fingers pressed on the surface (MultitouchSupport states 3–4). A hovering thumb or finger, or the previous finger still lifting off, no longer cancels a tap as a multi-finger gesture, and lift-off roll no longer counts toward the surface-movement checks. Two fingers touching still cancel the tap, and tap timing is unchanged.
+
 - Added a single Chrome startup separation interval after browser recording reproduced 1.54×/0.65× scale jumps; retained pending movement/end events and target cancellation. Physical validation remains in progress.
 - Fixed late momentum events from a previous scroll rejecting a fresh touch sequence; old momentum no longer starts the new two-finger candidate's decision timeout.
 - Reverted paced Chrome output after physical testing showed stutter and failed short gestures; restored immediate continuous increments and added an opt-in native/synthetic gesture trace for investigating the remaining jumps.

@@ -1,6 +1,20 @@
 import Foundation
 import CoreGraphics
 
+/// MultitouchSupport contact phases (`MTTouch.state`) that mean a finger is
+/// pressed on the surface. 1–2 are hovering and 5–7 are breaking contact,
+/// lingering and leaving: such a contact is not a second finger on the
+/// surface, and its position traces a finger rolling on or off rather than
+/// movement during the tap.
+enum TouchPhase {
+    static let makeTouch: Int32 = 3
+    static let touching: Int32 = 4
+
+    static func isOnSurface(_ state: Int32) -> Bool {
+        state == makeTouch || state == touching
+    }
+}
+
 /// Mouse gesture state machine
 enum MouseState: Equatable {
     case idle                    // 空闲状态
@@ -25,6 +39,7 @@ class TapDetector {
     private(set) var tapTimeThreshold: TimeInterval          // 最大点击时长
     private(set) var tapMovementThreshold: CGFloat           // 最大点击移动距离（光标）
     private(set) var rightClickTimeThreshold: TimeInterval   // 右键最小按住时长
+    private(set) var rightClickMaxDuration: TimeInterval     // 右键最长按住时长
     private(set) var doubleTapTimeWindow: TimeInterval       // 双击时间窗口
     private(set) var minTapDuration: TimeInterval            // 最小点击时长（防误触）
     private(set) var dragThreshold: CGFloat                  // 拖拽抖动阈值
@@ -49,11 +64,16 @@ class TapDetector {
     /// multiple of the displacement limit.
     private let cursorPathLimitMultiplier: CGFloat = 3.0
 
+    /// Quick taps and right-click holds may move this multiple of
+    /// `tapMovementThreshold`.
+    private let relaxedMovementMultiplier: CGFloat = 2.0
+
     /// Initialize with explicit values (for testing)
     init(
         tapTimeThreshold: TimeInterval = 0.3,
         tapMovementThreshold: CGFloat = 5.0,
         rightClickTimeThreshold: TimeInterval = 0.16,
+        rightClickMaxDuration: TimeInterval = 0.8,
         doubleTapTimeWindow: TimeInterval = 0.3,
         dragThreshold: CGFloat = 2.0,
         minTapDuration: TimeInterval = 0.03,
@@ -63,6 +83,7 @@ class TapDetector {
         self.tapTimeThreshold = tapTimeThreshold
         self.tapMovementThreshold = tapMovementThreshold
         self.rightClickTimeThreshold = rightClickTimeThreshold
+        self.rightClickMaxDuration = rightClickMaxDuration
         self.doubleTapTimeWindow = doubleTapTimeWindow
         self.minTapDuration = minTapDuration
         self.dragThreshold = dragThreshold
@@ -76,6 +97,7 @@ class TapDetector {
             tapTimeThreshold: configuration.tapTimeThreshold,
             tapMovementThreshold: configuration.tapMovementThreshold,
             rightClickTimeThreshold: configuration.rightClickTimeThreshold,
+            rightClickMaxDuration: configuration.rightClickMaxDuration,
             doubleTapTimeWindow: configuration.doubleTapTimeWindow,
             dragThreshold: configuration.dragThreshold,
             minTapDuration: configuration.minTapDuration,
@@ -88,6 +110,7 @@ class TapDetector {
         tapTimeThreshold = config.tapTimeThreshold
         tapMovementThreshold = config.tapMovementThreshold
         rightClickTimeThreshold = config.rightClickTimeThreshold
+        rightClickMaxDuration = config.rightClickMaxDuration
         doubleTapTimeWindow = config.doubleTapTimeWindow
         minTapDuration = config.minTapDuration
         dragThreshold = config.dragThreshold
@@ -277,16 +300,20 @@ class TapDetector {
             // 1. 快速点击允许更大的轻微移动，避免手抖造成漏点。
             // 2. 无论持续时间如何，都必须有移动上限，避免移动鼠标时误触。
             // 3. 除位移外还校验累积路程：来回移动可以骗过位移，骗不过路程。
+            // 4. 右侧按住达到右键时长时按右键规则判定（见 isValidRightClickHold）。
+            let isRightClickHold = isRightSide && duration >= rightClickTimeThreshold
             let isQuickTap = duration < quickTapThreshold
-            let movementLimit = isQuickTap ? tapMovementThreshold * 2.0 : tapMovementThreshold
-            let isValidTap = maximumMovementDistance <= movementLimit &&
-                             cursorPathLength <= movementLimit * cursorPathLimitMultiplier &&
-                             duration < tapTimeThreshold &&
-                             duration > minTapDuration
+            let movementLimit = isQuickTap ? tapMovementThreshold * relaxedMovementMultiplier : tapMovementThreshold
+            let isValidTap = isRightClickHold
+                ? isValidRightClickHold(duration: duration)
+                : maximumMovementDistance <= movementLimit &&
+                  cursorPathLength <= movementLimit * cursorPathLimitMultiplier &&
+                  duration < tapTimeThreshold &&
+                  duration > minTapDuration
 
             if isValidTap {
                 // 右键检测：按住时间较长且在右侧
-                if duration >= rightClickTimeThreshold && isRightSide {
+                if isRightClickHold {
                     #if DEBUG
                     print("✅ Right Click Triggered")
                     #endif
@@ -319,7 +346,7 @@ class TapDetector {
             } else {
                 clearClickHistory()
                 #if DEBUG
-                print("⚠️ Tap ignored. Too far, too long, or moving fast.")
+                print("⚠️ \(isRightClickHold ? "Right-click hold" : "Tap") ignored. Dur: \(String(format: "%.3f", duration)), Max dist: \(String(format: "%.2f", maximumMovementDistance)), Path: \(String(format: "%.2f", cursorPathLength))")
                 #endif
             }
 
@@ -331,10 +358,9 @@ class TapDetector {
                                    duration < tapTimeThreshold &&
                                    duration > minTapDuration
 
-            if isValidSecondTap,
-               duration >= rightClickTimeThreshold,
-               isRightSide {
-                // 第二次触摸位于右键区域且满足按住时长时，保留现有右键行为。
+            let isRightClickHold = isRightSide && duration >= rightClickTimeThreshold
+            if isRightClickHold && isValidRightClickHold(duration: duration) {
+                // 第二次触摸位于右键区域且满足按住时长时，按单次右键的规则判定。
                 result = TouchProcessResult(
                     shouldClick: true,
                     clickLocation: location,
@@ -343,7 +369,7 @@ class TapDetector {
                     isDragging: false,
                     dragLocation: nil
                 )
-            } else if isValidSecondTap {
+            } else if !isRightClickHold && isValidSecondTap {
                 result = TouchProcessResult(
                     shouldClick: true,
                     clickLocation: location,
@@ -371,6 +397,18 @@ class TapDetector {
 
         resetActiveTouch()
         return result
+    }
+
+    /// A right-click is a deliberate press-and-hold, not a tap. Holding rocks
+    /// the mouse a little (amplified at high pointer speeds) and often lasts
+    /// past `tapTimeThreshold`, so it keeps the quick-tap movement allowance
+    /// and its own maximum hold time. The surface scroll checks still apply.
+    private func isValidRightClickHold(duration: TimeInterval) -> Bool {
+        let movementLimit = tapMovementThreshold * relaxedMovementMultiplier
+        return maximumMovementDistance <= movementLimit &&
+               cursorPathLength <= movementLimit * cursorPathLimitMultiplier &&
+               duration < max(tapTimeThreshold, rightClickMaxDuration) &&
+               duration > minTapDuration
     }
 
     /// Cancels the current gesture and any pending double-tap sequence.

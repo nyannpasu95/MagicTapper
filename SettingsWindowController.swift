@@ -49,6 +49,15 @@ final class SettingsWindowController: NSWindowController {
             write: { $0.rightClickTimeThreshold = $1 }
         ),
         SliderSpec(
+            title: "Right-Click Max Hold",
+            unit: "s",
+            decimals: 2,
+            minimumValue: 0.35,
+            maximumValue: 1.5,
+            read: { $0.rightClickMaxDuration },
+            write: { $0.rightClickMaxDuration = $1 }
+        ),
+        SliderSpec(
             title: "Double-Tap Window",
             unit: "s",
             decimals: 2,

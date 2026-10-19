@@ -277,7 +277,12 @@ final class MultitouchManager: @unchecked Sendable {
         let zoomOwns = zoomCoordinator.process(device: device, touches: zoomTouches, timestamp: timestamp,
                                               dragging: isDraggingActive, generation: zoomGeneration,
                                               target: target, contactCount: touches.count)
-        let numTouches = touches.count
+        // Taps count only fingers pressed on the surface. A thumb hovering at
+        // the edge or the previous finger still lifting off is not a second
+        // finger, and lift-off frames carry a roll that can triple a tap's
+        // measured surface movement, so they skip the scroll checks.
+        let tapTouches = touches.filter { TouchPhase.isOnSurface($0.state) }
+        let numTouches = tapTouches.count
         if numTouches > 1 || zoomOwns { consumedDevices.insert(device) }
         if consumedDevices.contains(device) {
             // Do not let a second device end another device's gesture.
@@ -290,8 +295,8 @@ final class MultitouchManager: @unchecked Sendable {
         }
         guard isEnabled else { return }
         if let tapDevice, tapDevice != device { return }
-        if numTouches > 0 { tapDevice = device }
-        defer { if numTouches == 0 { tapDevice = nil } }
+        if !touches.isEmpty { tapDevice = device }
+        defer { if touches.isEmpty { tapDevice = nil } }
 
         // Only fetch cursor position when needed (touch start, end, or drag)
         // For touch move without drag, we can skip this expensive call
@@ -302,52 +307,56 @@ final class MultitouchManager: @unchecked Sendable {
             return lastCursorLocation
         }
 
-        if numTouches == 0 {
-            if activeTouch != -1 {
-                // Touch ended - need cursor position
-                let cgLocation = getCursorLocation()
+        // The tap ends once its finger is no longer reported, as before, so the
+        // time thresholds keep their calibration. Hovering contacts no longer
+        // delay this, and the next finger may already have landed.
+        if activeTouch != -1 && !touches.contains(where: { $0.identifier == activeTouch }) {
+            // Touch ended - need cursor position
+            let cgLocation = getCursorLocation()
 
-                // 如果触摸已被取消（表面移动检测触发），不处理点击
-                if !isCancelled {
-                    let isRightSide = touchStartX > rightClickThreshold
-                    let result = tapDetector.touchEnded(at: cgLocation, isRightSide: isRightSide)
+            // 如果触摸已被取消（表面移动检测触发），不处理点击
+            if !isCancelled {
+                let isRightSide = touchStartX > rightClickThreshold
+                let result = tapDetector.touchEnded(at: cgLocation, isRightSide: isRightSide)
 
-                    // Handle click
-                    if result.shouldClick, let clickLocation = result.clickLocation {
-                        onClickSynthesized?(clickLocation, result.isRightClick, result.clickCount)
-                    }
-
-                    // Handle drag end
-                    if isDraggingActive {
-                        onDragEnded?(cgLocation)
-                        isDraggingActive = false
-                    }
-                } else {
-                    #if DEBUG
-                    print("🚫 Touch ended but was cancelled - no click")
-                    #endif
-                    // 如果已取消且在拖拽，也要结束拖拽
-                    if isDraggingActive {
-                        onDragEnded?(cgLocation)
-                        isDraggingActive = false
-                    }
+                // Handle click
+                if result.shouldClick, let clickLocation = result.clickLocation {
+                    onClickSynthesized?(clickLocation, result.isRightClick, result.clickCount)
                 }
 
-                activeTouch = -1
-                touchStartX = 0.0
-                touchStartY = 0.0
-                touchStartTime = 0
-                touchStartCursorLocation = .zero
-                isCancelled = false
-                resetSurfaceTrackingOnTouchQueue()
+                // Handle drag end
+                if isDraggingActive {
+                    onDragEnded?(cgLocation)
+                    isDraggingActive = false
+                }
+            } else {
+                #if DEBUG
+                print("🚫 Touch ended but was cancelled - no click")
+                #endif
+                // 如果已取消且在拖拽，也要结束拖拽
+                if isDraggingActive {
+                    onDragEnded?(cgLocation)
+                    isDraggingActive = false
+                }
             }
+
+            activeTouch = -1
+            touchStartX = 0.0
+            touchStartY = 0.0
+            touchStartTime = 0
+            touchStartCursorLocation = .zero
+            isCancelled = false
+            resetSurfaceTrackingOnTouchQueue()
+        }
+
+        if numTouches == 0 {
             return
         }
 
         if numTouches == 1 {
-            let touch = touches[0]
+            let touch = tapTouches[0]
 
-            if touch.state == 4 || touch.state == 7 {
+            if touch.state == TouchPhase.touching {
                 if activeTouch == -1 {
                     // New touch started - need cursor position
                     let cgLocation = getCursorLocation()

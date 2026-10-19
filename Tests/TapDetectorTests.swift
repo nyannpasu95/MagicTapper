@@ -150,6 +150,96 @@ class TapDetectorTests: XCTestCase {
         XCTAssertFalse(result.isRightClick, "Should be a left click")
     }
 
+    func testRightClick_HoldPastTapTimeLimitStillRightClicks() {
+        let location = CGPoint(x: 100, y: 100)
+
+        _ = detector.touchBegan(at: location, isRightSide: true)
+        advanceTime(by: 0.5) // Past the 0.3s tap limit, within the 0.8s hold limit
+        let result = detector.touchEnded(at: location, isRightSide: true)
+
+        XCTAssertTrue(result.shouldClick, "A deliberate right-side hold must not be dropped")
+        XCTAssertTrue(result.isRightClick)
+        XCTAssertEqual(result.clickCount, 1)
+    }
+
+    func testRightClick_HoldPastMaxDurationIsIgnored() {
+        let location = CGPoint(x: 100, y: 100)
+
+        _ = detector.touchBegan(at: location, isRightSide: true)
+        advanceTime(by: 0.85)
+        let result = detector.touchEnded(at: location, isRightSide: true)
+
+        XCTAssertFalse(result.shouldClick, "A resting finger lifted after the hold limit must not click")
+    }
+
+    func testLeftSide_LongHoldStillIgnored() {
+        let location = CGPoint(x: 100, y: 100)
+
+        _ = detector.touchBegan(at: location, isRightSide: false)
+        advanceTime(by: 0.5)
+        let result = detector.touchEnded(at: location, isRightSide: false)
+
+        XCTAssertFalse(result.shouldClick, "The longer hold limit applies only to right-clicks")
+    }
+
+    func testRightClick_HoldKeepsQuickTapMovementAllowance() {
+        let start = CGPoint(x: 100, y: 100)
+        let wobble = CGPoint(x: 108, y: 100) // Over 5px, within the doubled 10px
+
+        _ = detector.touchBegan(at: start, isRightSide: true)
+        advanceTime(by: 0.2)
+        _ = detector.touchMoved(to: wobble)
+        advanceTime(by: 0.05)
+        let rightResult = detector.touchEnded(at: wobble, isRightSide: true)
+
+        XCTAssertTrue(rightResult.shouldClick, "Pressing and holding rocks the mouse slightly")
+        XCTAssertTrue(rightResult.isRightClick)
+
+        advanceTime(by: 0.5)
+        _ = detector.touchBegan(at: start, isRightSide: false)
+        advanceTime(by: 0.2)
+        _ = detector.touchMoved(to: wobble)
+        advanceTime(by: 0.05)
+        let leftResult = detector.touchEnded(at: wobble, isRightSide: false)
+
+        XCTAssertFalse(leftResult.shouldClick, "Slow left taps keep the strict movement limit")
+    }
+
+    func testRightClick_HoldBeyondRelaxedMovementIsIgnored() {
+        let start = CGPoint(x: 100, y: 100)
+        let moved = CGPoint(x: 111, y: 100)
+
+        _ = detector.touchBegan(at: start, isRightSide: true)
+        advanceTime(by: 0.2)
+        _ = detector.touchMoved(to: moved)
+        advanceTime(by: 0.05)
+        let result = detector.touchEnded(at: moved, isRightSide: true)
+
+        XCTAssertFalse(result.shouldClick, "Moving the mouse with a finger on the right side is not a right-click")
+    }
+
+    func testRightClickMaxDuration_FollowsConfiguration() {
+        let location = CGPoint(x: 100, y: 100)
+        detector.updateConfiguration(TapConfiguration(tapTimeThreshold: 0.3,
+                                                      tapMovementThreshold: 5.0,
+                                                      rightClickTimeThreshold: 0.1,
+                                                      rightClickMaxDuration: 0.4))
+        XCTAssertEqual(detector.rightClickMaxDuration, 0.4, accuracy: 0.0001)
+
+        _ = detector.touchBegan(at: location, isRightSide: true)
+        advanceTime(by: 0.45)
+        let result = detector.touchEnded(at: location, isRightSide: true)
+
+        XCTAssertFalse(result.shouldClick)
+    }
+
+    // MARK: - Touch Phases
+
+    func testTouchPhase_OnlyMakeTouchAndTouchingAreOnSurface() {
+        let onSurface = (Int32(0)...Int32(7)).filter { TouchPhase.isOnSurface($0) }
+        XCTAssertEqual(onSurface, [3, 4], "Hovering (1–2) and lifting (5–7) contacts are not fingers on the surface")
+    }
+
     // MARK: - Double-click and Drag Detection
 
     private func performFirstTap(at location: CGPoint = CGPoint(x: 100, y: 100)) {
@@ -281,6 +371,19 @@ class TapDetectorTests: XCTestCase {
         _ = detector.touchBegan(at: location, isRightSide: true)
 
         advanceTime(by: 0.12)
+        let result = detector.touchEnded(at: location, isRightSide: true)
+        XCTAssertTrue(result.shouldClick)
+        XCTAssertTrue(result.isRightClick)
+        XCTAssertEqual(result.clickCount, 1)
+    }
+
+    func testSecondTap_RightSideLongHoldStillRightClicks() {
+        let location = CGPoint(x: 100, y: 100)
+        performFirstTap(at: location)
+        advanceTime(by: 0.1)
+        _ = detector.touchBegan(at: location, isRightSide: true)
+
+        advanceTime(by: 0.5)
         let result = detector.touchEnded(at: location, isRightSide: true)
         XCTAssertTrue(result.shouldClick)
         XCTAssertTrue(result.isRightClick)

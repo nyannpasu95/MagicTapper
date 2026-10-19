@@ -18,6 +18,12 @@ class TapConfigurationTests: XCTestCase {
         XCTAssertEqual(TapConfiguration.default.rightClickTimeThreshold, 0.16, accuracy: 0.001)
     }
 
+    func testDefaultRightClickHoldOutlastsTapLimit() {
+        // A deliberate press-and-hold routinely runs past the left-tap limit.
+        XCTAssertEqual(TapConfiguration.default.rightClickMaxDuration, 0.8, accuracy: 0.001)
+        XCTAssertGreaterThan(TapConfiguration.default.rightClickMaxDuration, TapConfiguration.default.tapTimeThreshold)
+    }
+
     func testDefaultScrollIntentThresholds() {
         XCTAssertEqual(TapConfiguration.default.surfacePathThreshold, 0.10, accuracy: 0.001)
         XCTAssertEqual(TapConfiguration.default.scrollVelocityThreshold, 1.0, accuracy: 0.001)
@@ -49,6 +55,7 @@ class TapConfigurationTests: XCTestCase {
         XCTAssertEqual(decoded.rightClickAreaThreshold, 0.65, accuracy: 0.0001)
         XCTAssertEqual(decoded.surfacePathThreshold, TapConfiguration.default.surfacePathThreshold, accuracy: 0.0001)
         XCTAssertEqual(decoded.scrollVelocityThreshold, TapConfiguration.default.scrollVelocityThreshold, accuracy: 0.0001)
+        XCTAssertEqual(decoded.rightClickMaxDuration, TapConfiguration.default.rightClickMaxDuration, accuracy: 0.0001)
         XCTAssertFalse(decoded.zoomEnabled)
         XCTAssertFalse(decoded.zoomReversed)
         XCTAssertEqual(decoded.zoomSensitivity, 1)
@@ -58,6 +65,7 @@ class TapConfigurationTests: XCTestCase {
         var config = TapConfiguration.default
         config.surfacePathThreshold = 0.18
         config.scrollVelocityThreshold = 1.7
+        config.rightClickMaxDuration = 1.2
         config.zoomEnabled = true
         config.zoomReversed = true
         config.zoomSensitivity = 1.6

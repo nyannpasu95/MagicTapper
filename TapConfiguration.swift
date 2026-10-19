@@ -16,6 +16,11 @@ struct TapConfiguration: Codable, Equatable {
     /// Minimum hold duration to trigger right-click (seconds)
     var rightClickTimeThreshold: TimeInterval
 
+    /// Maximum hold duration still accepted as a right-click (seconds).
+    /// A right-click is a deliberate press-and-hold, which routinely outlasts
+    /// the left-tap limit (`tapTimeThreshold`).
+    var rightClickMaxDuration: TimeInterval
+
     /// Time window for double-tap detection (seconds)
     var doubleTapTimeWindow: TimeInterval
 
@@ -64,6 +69,9 @@ struct TapConfiguration: Codable, Equatable {
         // 0.1s sat inside the natural duration of a deliberate click, so
         // ordinary clicks on the right half were misread as right-clicks.
         rightClickTimeThreshold: 0.16,
+        // Holds of 0.35–0.8s used to fall past tapTimeThreshold and were
+        // silently dropped, so a longer, more careful press made it worse.
+        rightClickMaxDuration: 0.8,
         doubleTapTimeWindow: 0.3,
         minTapDuration: 0.03,
         dragThreshold: 2.0,
@@ -82,6 +90,7 @@ struct TapConfiguration: Codable, Equatable {
         tapTimeThreshold: TimeInterval = 0.35,
         tapMovementThreshold: CGFloat = 8.0,
         rightClickTimeThreshold: TimeInterval = 0.16,
+        rightClickMaxDuration: TimeInterval = 0.8,
         doubleTapTimeWindow: TimeInterval = 0.3,
         minTapDuration: TimeInterval = 0.03,
         dragThreshold: CGFloat = 2.0,
@@ -98,6 +107,7 @@ struct TapConfiguration: Codable, Equatable {
         self.tapTimeThreshold = tapTimeThreshold
         self.tapMovementThreshold = tapMovementThreshold
         self.rightClickTimeThreshold = rightClickTimeThreshold
+        self.rightClickMaxDuration = rightClickMaxDuration
         self.doubleTapTimeWindow = doubleTapTimeWindow
         self.minTapDuration = minTapDuration
         self.dragThreshold = dragThreshold
@@ -122,6 +132,7 @@ struct TapConfiguration: Codable, Equatable {
         tapTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .tapTimeThreshold) ?? fallback.tapTimeThreshold
         tapMovementThreshold = try container.decodeIfPresent(CGFloat.self, forKey: .tapMovementThreshold) ?? fallback.tapMovementThreshold
         rightClickTimeThreshold = try container.decodeIfPresent(TimeInterval.self, forKey: .rightClickTimeThreshold) ?? fallback.rightClickTimeThreshold
+        rightClickMaxDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .rightClickMaxDuration) ?? fallback.rightClickMaxDuration
         doubleTapTimeWindow = try container.decodeIfPresent(TimeInterval.self, forKey: .doubleTapTimeWindow) ?? fallback.doubleTapTimeWindow
         minTapDuration = try container.decodeIfPresent(TimeInterval.self, forKey: .minTapDuration) ?? fallback.minTapDuration
         dragThreshold = try container.decodeIfPresent(CGFloat.self, forKey: .dragThreshold) ?? fallback.dragThreshold

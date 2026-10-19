@@ -28,7 +28,7 @@ If the menu reports zoom paused, ordinary scrolling remains available. Check Acc
 ## ✨ Features
 
 - 🖱️ **Tap left side** for left-click
-- 🖱️ **Hold right side (>0.1s)** for right-click (anti-false-trigger)
+- 🖱️ **Press and hold the right side (about 0.16–0.8s)** for right-click (anti-false-trigger)
 - 🖱️ **Double-tap and release** for a system double-click
 - 🎯 **Double-tap, hold, and move** to drag & drop
 - ⚡ **Fast & responsive** - optimized for minimal latency
@@ -97,7 +97,7 @@ That's it! You'll see a mouse icon in your menu bar.
 1. Look for the **mouse icon** 🖱️ in your menu bar (top-right of screen)
 2. **Tap your Magic Mouse** surface:
    - **Quick tap left side** = left-click
-   - **Hold right side (≥0.1s)** = right-click (context menu)
+   - **Press and hold right side (about 0.16–0.8s)** = right-click (context menu)
    - **Double-tap and release** = double-click
    - **Double-tap, hold, and move** = drag & drop
 3. You can still click the mouse button normally - tapping is just an additional way to click
@@ -118,7 +118,7 @@ Click the mouse icon in your menu bar to access:
 ### Tips
 
 - 💡 **Left-click**: Quick, light tap on the left side
-- 💡 **Right-click**: Press and hold (>0.1s) on the right side before releasing
+- 💡 **Right-click**: Press and hold on the right side for about 0.2–0.5s, then release. Lift your other fingers off the surface first; a hovering thumb or finger is ignored
 - 💡 **Double-click**: Double-tap quickly and release the second tap without moving
 - 💡 **Drag & drop**: Double-tap quickly, keep finger down on the second tap, then move beyond the tap threshold
 - 💡 The dividing line between left/right is roughly at 60% from left
@@ -196,6 +196,7 @@ What you can tune:
 - **Max Tap Duration** — how long a tap may last and still count as a click
 - **Movement Tolerance** — how far the cursor may move during a tap
 - **Right-Click Hold Time** — minimum hold time on the right side for a right-click
+- **Right-Click Max Hold** — longest right-side hold that still counts as a right-click
 - **Double-Tap Window** — time window for double-tap and drag detection
 - **Left/Right Boundary** — where the mouse surface splits into left/right click zones
 - **Surface Movement Limit** — how far the finger may slide before a tap is treated as scrolling
